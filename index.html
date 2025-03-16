@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stunning 3D Pathfinder</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      margin: 0;
+      background: #000;
+      color: #fff;
+      font-family: 'Arial', sans-serif;
+      overflow: hidden;
+      background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+    }
+    
+    #scene-container {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+    }
+    
+    .controls {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      z-index: 100;
+      display: flex;
+      gap: 15px;
+    }
+    
+    .control-btn {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 30px;
+      cursor: pointer;
+      font-weight: bold;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+    }
+    
+    .control-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+    
+    .title {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      font-size: 1.5rem;
+      color: white;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+      z-index: 100;
+      opacity: 0.7;
+    }
+    
+    .loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      transition: opacity 1s;
+    }
+    
+    .loading-text {
+      font-size: 2rem;
+      color: white;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+    
+    .info {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 10px;
+      z-index: 100;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      opacity: 0.7;
+      transition: opacity 0.3s;
+    }
+    
+    .info:hover {
+      opacity: 1;
+    }
+    
+    .info p {
+      margin: 5px 0;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="scene-container"></div>
+  
+  <div class="title">Pathfinder 3D</div>
+  
+  <div class="controls">
+    <button class="control-btn" id="add-agents">Add Agents</button>
+    <button class="control-btn" id="add-obstacles">Add Obstacles</button>
+    <button class="control-btn" id="reset">Reset</button>
+  </div>
+  
+  <div class="info">
+    <p>Agents: <span id="agent-count">5</span></p>
+    <p>Obstacles: <span id="obstacle-count">10</span></p>
+    <p>Collisions: <span id="collision-count">0</span></p>
+  </div>
+  
+  <div class="loading">
+    <div class="loading-text">Loading...</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { RGBELoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/RGBELoader.js';
+    import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js';
+    import { FXAAShader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/shaders/FXAAShader.js';
+    
+    // DOM Elements
+    const container = document.getElementById('scene-container');
+    const loading = document.querySelector('.loading');
+    const addAgentsBtn = document.getElementById('add-agents');
+    const addObstaclesBtn = document.getElementById('add-obstacles');
+    const resetBtn = document.getElementById('reset');
+    const agentCountEl = document.getElementById('agent-count');
+    const obstacleCountEl = document.getElementById('obstacle-count');
+    const collisionCountEl = document.getElementById('collision-count');
+    
+    // Three.js Variables
+    let camera, scene, renderer, composer;
+    let controls, clock;
+    let agentCount = 5;
+    let obstacleCount = 10;
+    let collisionCount = 0;
+    
+    // Environment
+    let agents = [];
+    let obstacles = [];
+    let particles = [];
+    let envmap;
+    
+    // Simulation Settings
+    const BOUNDARY_SIZE = 100;
+    const AGENT_SPEED = 15;
+    const MAX_TRAIL_LENGTH = 200;
+    
+    // Initialize
+    init();
+    
+    async function init() {
+      // Clock for frame-independent animation
+      clock = new THREE.Clock();
+      
+      // Create scene
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x000000, 0.001);
+      
+      // Create camera
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
+      camera.position.set(0, 10, 150);
+      
+      // Create renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.5;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+      
+      // Initialize camera controls
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxDistance = 300;
+      controls.minDistance = 30;
+      
+      // Set up post-processing
+      setupPostProcessing();
+      
+      // Load environment map
+      await loadEnvironment();
+      
+      // Set up lighting
+      setupLighting();
+      
+      // Create environment
+      createEnvironment();
+      
+      // Create initial agents & obstacles
+      createAgents(agentCount);
+      createObstacles(obstacleCount);
+      
+      // Add event listeners
+      window.addEventListener('resize', onWindowResize);
+      addAgentsBtn.addEventListener('click', () => addAgents(2));
+      addObstaclesBtn.addEventListener('click', () => addObstacles(3));
+      resetBtn.addEventListener('click', reset);
+      
+      // Hide loading screen after a short delay
+      setTimeout(() => {
+        loading.style.opacity = 0;
+        setTimeout(() => loading.style.display = 'none', 1000);
+      }, 1000);
+      
+      // Start animation loop
+      animate();
+    }
+    
+    function setupPostProcessing() {
+      // Create render pass
+      const renderPass = new RenderPass(scene, camera);
+      
+      // Setup bloom pass
+      const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        1.0,   // strength
+        0.4,   // radius
+        0.85   // threshold
+      );
+      
+      // Add FXAA pass for anti-aliasing
+      const fxaaPass = new ShaderPass(FXAAShader);
+      fxaaPass.uniforms['resolution'].value.set(
+        1 / (window.innerWidth * renderer.getPixelRatio()),
+        1 / (window.innerHeight * renderer.getPixelRatio())
+      );
+      
+      // Setup composer
+      composer = new EffectComposer(renderer);
+      composer.addPass(renderPass);
+      composer.addPass(bloomPass);
+      composer.addPass(fxaaPass);
+    }
+    
+    async function loadEnvironment() {
+      return new Promise((resolve) => {
+        new RGBELoader()
+          .setPath('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/equirectangular/')
+          .load('royal_esplanade_1k.hdr', function (texture) {
+            texture.mapping = THREE.EquirectangularReflectionMapping;
+            
+            scene.environment = texture;
+            envmap = texture;
+            
+            resolve();
+          });
+      });
+    }
+    
+    function setupLighting() {
+      // Add ambient light
+      const ambientLight = new THREE.AmbientLight(0x101010, 0.5);
+      scene.add(ambientLight);
+      
+      // Add directional light
+      const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
+      mainLight.position.set(50, 50, 50);
+      mainLight.castShadow = true;
+      mainLight.shadow.mapSize.width = 2048;
+      mainLight.shadow.mapSize.height = 2048;
+      mainLight.shadow.camera.near = 0.5;
+      mainLight.shadow.camera.far = 500;
+      mainLight.shadow.camera.left = -100;
+      mainLight.shadow.camera.right = 100;
+      mainLight.shadow.camera.top = 100;
+      mainLight.shadow.camera.bottom = -100;
+      scene.add(mainLight);
+      
+      // Add point lights for atmosphere
+      const colors = [0x3677e8, 0xff4d5f, 0x00ffaa, 0xff9000];
+      for (let i = 0; i < 4; i++) {
+        const intensity = 3 + Math.random() * 2;
+        const distance = 80 + Math.random() * 40;
+        const pointLight = new THREE.PointLight(colors[i % colors.length], intensity, distance);
+        
+        const angle = (i / 4) * Math.PI * 2;
+        const radius = 80;
+        pointLight.position.set(
+          radius * Math.cos(angle),
+          -30 + Math.random() * 60,
+          radius * Math.sin(angle)
+        );
+        
+        scene.add(pointLight);
+      }
+    }
+    
+    function createEnvironment() {
+      // Create a boundary box
+      const boxGeometry = new THREE.BoxGeometry(
+        BOUNDARY_SIZE * 2,
+        BOUNDARY_SIZE * 2,
+        BOUNDARY_SIZE * 2
+      );
+      
+      const boxMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.05
+      });
+      
+      const box = new THREE.Mesh(boxGeometry, boxMaterial);
+      scene.add(box);
+      
+      // Create a ground plane with mirror-like reflection
+      const groundGeometry = new THREE.PlaneGeometry(BOUNDARY_SIZE * 3, BOUNDARY_SIZE * 3);
+      const groundMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0x000000,
+        metalness: 0.1,
+        roughness: 0.3,
+        reflectivity: 1.0,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.2,
+        envMap: envmap
+      });
+      
+      const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -BOUNDARY_SIZE;
+      ground.receiveShadow = true;
+      scene.add(ground);
+      
+      // Add a subtle grid
+      const gridHelper = new THREE.GridHelper(BOUNDARY_SIZE * 2, 40, 0x111111, 0x111111);
+      gridHelper.position.y = -BOUNDARY_SIZE + 0.1;
+      gridHelper.material.opacity = 0.1;
+      gridHelper.material.transparent = true;
+      scene.add(gridHelper);
+      
+      // Add some background stars
+      const starGeometry = new THREE.BufferGeometry();
+      const starVertices = [];
+      
+      for (let i = 0; i < 2000; i++) {
+        const x = THREE.MathUtils.randFloatSpread(2000);
+        const y = THREE.MathUtils.randFloatSpread(2000);
+        const z = THREE.MathUtils.randFloatSpread(2000);
+        
+        // Ensure stars are outside the boundary
+        const dist = Math.sqrt(x*x + y*y + z*z);
+        if (dist < BOUNDARY_SIZE * 2) continue;
+        
+        starVertices.push(x, y, z);
+      }
+      
+      starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+      
+      const starMaterial = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 1,
+        transparent: true,
+        opacity: 0.8,
+        sizeAttenuation: false
+      });
+      
+      const stars = new THREE.Points(starGeometry, starMaterial);
+      scene.add(stars);
+    }
+    
+    function createAgents(count) {
+      // Define a palette of glowing colors
+      const colors = [
+        0x00aaff, // Bright blue
+        0x00ffaa, // Cyan
+        0xff1493, // Deep pink
+        0xffaa00, // Orange
+        0xff00aa, // Magenta
+        0x9900ff, // Purple
+        0x00ff00, // Green
+        0xff4d4d  // Red
+      ];
+      
+      for (let i = 0; i < count; i++) {
+        // Create a sphere geometry
+        const radius = 1.5 + Math.random() * 1.5;
+        const geometry = new THREE.SphereGeometry(radius, 32, 32);
+        
+        // Create a glowing material
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const material = new THREE.MeshPhysicalMaterial({
+          color: color,
+          emissive: color,
+          emissiveIntensity: 0.5,
+          metalness: 0.9,
+          roughness: 0.1,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.1,
+          reflectivity: 1.0,
+          envMap: envmap
+        });
+        
+        // Create the mesh
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        
+        // Random position within boundary
+        const position = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
+          THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
+          THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6)
+        );
+        
+        // Make sure we don't spawn below the ground
+        if (position.y < -BOUNDARY_SIZE + radius) {
+          position.y = -BOUNDARY_SIZE + radius + 5;
+        }
+        
+        mesh.position.copy(position);
+        
+        // Random direction
+        const direction = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(2),
+          THREE.MathUtils.randFloatSpread(2),
+          THREE.MathUtils.randFloatSpread(2)
+        ).normalize().multiplyScalar(AGENT_SPEED * (0.7 + Math.random() * 0.6));
+        
+        // Add a point light attached to the agent
+        const light = new THREE.PointLight(color, 1.0, 10);
+        mesh.add(light);
+        
+        // Create a trail with custom curve
+        const trailMaterial = new THREE.LineBasicMaterial({
+          color: color,
+          transparent: true,
+          opacity: 0.7
+        });
+        
+        const trailGeometry = new THREE.BufferGeometry();
+        const trail = new THREE.Line(trailGeometry, trailMaterial);
+        scene.add(trail);
+        
+        // Add the agent to the scene
+        scene.add(mesh);
+        
+        // Add to agents array
+        agents.push({
+          mesh: mesh,
+          position: position,
+          direction: direction,
+          radius: radius,
+          color: color,
+          trail: trail,
+          trailPoints: [position.clone()],
+          light: light
+        });
+      }
+      
+      // Update agent count
+      agentCount += count;
+      agentCountEl.textContent = agentCount;
+    }
+    
+    function createObstacles(count) {
+      // Array of geometries to choose from
+      const geometryOptions = [
+        () => new THREE.OctahedronGeometry(6 + Math.random() * 4, 0), // Diamond
+        () => new THREE.IcosahedronGeometry(6 + Math.random() * 4, 0), // Icosahedron
+        () => new THREE.TetrahedronGeometry(6 + Math.random() * 4, 0), // Tetrahedron
+        () => new THREE.TorusKnotGeometry(5 + Math.random() * 2, 1.5, 32, 8) // Torus knot
+      ];
+      
+      for (let i = 0; i < count; i++) {
+        // Choose a random geometry
+        const geometryFunc = geometryOptions[Math.floor(Math.random() * geometryOptions.length)];
+        const geometry = geometryFunc();
+        
+        // Generate a random color with high saturation and brightness
+        const hue = Math.random();
+        const material = new THREE.MeshPhysicalMaterial({
+          color: new THREE.Color().setHSL(hue, 0.9, 0.6),
+          metalness: 0.2 + Math.random() * 0.6,
+          roughness: 0.1,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.1,
+          envMap: envmap
+        });
+        
+        // Create the mesh
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        
+        // Random position within boundary
+        let position;
+        let tooClose = true;
+        
+        // Make sure obstacles don't spawn too close to existing agents or obstacles
+        while (tooClose) {
+          position = new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
+            THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
+            THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6)
+          );
+          
+          // Make sure we don't spawn below the ground
+          if (position.y < -BOUNDARY_SIZE + 6) {
+            position.y = -BOUNDARY_SIZE + 6;
+          }
+          
+          tooClose = false;
+          
+          // Check distance to agents
+          for (const agent of agents) {
+            if (position.distanceTo(agent.position) < 20) {
+              tooClose = true;
+              break;
+            }
+          }
+          
+          // Check distance to other obstacles
+          if (!tooClose) {
+            for (const obstacle of obstacles) {
+              if (position.distanceTo(obstacle.position) < 25) {
+                tooClose = true;
+                break;
+              }
+            }
+          }
+        }
+        
+        mesh.position.copy(position);
+        
+        // Random rotation
+        mesh.rotation.set(
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2,
+          Math.random() * Math.PI * 2
+        );
+        
+        // Add random rotation speeds
+        const rotationSpeed = new THREE.Vector3(
+          (Math.random() - 0.5) * 0.01,
+          (Math.random() - 0.5) * 0.01,
+          (Math.random() - 0.5) * 0.01
+        );
+        
+        // Add the obstacle to the scene
+        scene.add(mesh);
+        
+        // Add to obstacles array
+        obstacles.push({
+          mesh: mesh,
+          position: position,
+          color: material.color,
+          size: 6, // Average size
+          rotationSpeed: rotationSpeed
+        });
+      }
+      
+      // Update obstacle count
+      obstacleCount += count;
+      obstacleCountEl.textContent = obstacleCount;
+    }
+    
+    // Create particles for collision effects
+    class Particle {
+      constructor(position, color) {
+        const size = 0.5 + Math.random() * 1.0;
+        const geometry = new THREE.SphereGeometry(size, 8, 8);
+        const material = new THREE.MeshBasicMaterial({
+          color: color,
+          transparent: true,
+          opacity: 1.0
+        });
+        
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh.position.copy(position);
+        
+        // Random velocity
+        this.velocity = new THREE.Vector3(
+          (Math.random() - 0.5) * 5,
+          (Math.random() - 0.5) * 5,
+          (Math.random() - 0.5) * 5
+        );
+        
+        this.life = 60; // Frames to live
+        scene.add(this.mesh);
+      }
+      
+      update(delta) {
+        // Move based on velocity
+        this.mesh.position.add(this.velocity.clone().multiplyScalar(delta * 30));
+        
+        // Slow down
+        this.velocity.multiplyScalar(0.96);
+        
+        // Age
+        this.life--;
+        
+        // Fade out
+        this.mesh.material.opacity = this.life / 60;
+        
+        // Scale down
+        const scale = this.life / 60;
+        this.mesh.scale.set(scale, scale, scale);
+        
+        // Return true if still alive, false if dead
+        return this.life > 0;
+      }
+      
+      remove() {
+        scene.remove(this.mesh);
+        this.mesh.geometry.dispose();
+        this.mesh.material.dispose();
+      }
+    }
+    
+    function createCollisionEffect(position, color, count = 20) {
+      for (let i = 0; i < count; i++) {
+        particles.push(new Particle(position, color));
+      }
+    }
+    
+    function addAgents(count) {
+      createAgents(count);
+    }
+    
+    function addObstacles(count) {
+      createObstacles(count);
+    }
+    
+    function reset() {
+      // Remove all agents
+      for (const agent of agents) {
+        scene.remove(agent.mesh);
+        scene.remove(agent.trail);
+      }
+      
+      // Remove all obstacles
+      for (const obstacle of obstacles) {
+        scene.remove(obstacle.mesh);
+      }
+      
+      // Remove all particles
+      for (const particle of particles) {
+        particle.remove();
+      }
+      
+      // Clear arrays
+      agents = [];
+      obstacles = [];
+      particles = [];
+      
+      // Reset counters
+      agentCount = 0;
+      obstacleCount = 0;
+      collisionCount = 0;
+      
+      // Update display
+      agentCountEl.textContent = agentCount;
+      obstacleCountEl.textContent = obstacleCount;
+      collisionCountEl.textContent = collisionCount;
+      
+      // Create new objects
+      createAgents(5);
+      createObstacles(10);
+    }
+    
+    function updateAgents(delta) {
+      // Update each agent
+      for (const agent of agents) {
+        // Move agent
+        agent.position.add(agent.direction.clone().multiplyScalar(delta));
+        agent.mesh.position.copy(agent.position);
+        
+        // Add rotation for visual effect
+        agent.mesh.rotation.x += delta * 0.5;
+        agent.mesh.rotation.y += delta * 0.3;
+        
+        // Update trail
+        agent.trailPoints.push(agent.position.clone());
+        if (agent.trailPoints.length > MAX_TRAIL_LENGTH) {
+          agent.trailPoints.shift();
+        }
+        
+        // Update trail geometry
+        const geometry = new THREE.BufferGeometry().setFromPoints(agent.trailPoints);
+        agent.trail.geometry.dispose();
+        agent.trail.geometry = geometry;
+        
+        // Check boundary collisions
+        const boundarySize = BOUNDARY_SIZE;
+        let collided = false;
+        
+        if (agent.position.x - agent.radius < -boundarySize || agent.position.x + agent.radius > boundarySize) {
+          agent.direction.x = -agent.direction.x;
+          agent.position.x = Math.max(-boundarySize + agent.radius, Math.min(boundarySize - agent.radius, agent.position.x));
+          collided = true;
+        }
+        
+        if (agent.position.y - agent.radius < -boundarySize || agent.position.y + agent.radius > boundarySize) {
+          agent.direction.y = -agent.direction.y;
+          agent.position.y = Math.max(-boundarySize + agent.radius, Math.min(boundarySize - agent.radius, agent.position.y));
+          collided = true;
+        }
+        
+        if (agent.position.z - agent.radius < -boundarySize || agent.position.z + agent.radius > boundarySize) {
+          agent.direction.z = -agent.direction.z;
+          agent.position.z = Math.max(-boundarySize + agent.radius, Math.min(boundarySize - agent.radius, agent.position.z));
+          collided = true;
+        }
+        
+        // Create effect on boundary collision
+        if (collided) {
+          createCollisionEffect(agent.position, agent.color, 10);
+        }
+      }
+    }
+    
+    function checkCollisions() {
+      // Check agent-agent collisions
+      for (let i = 0; i < agents.length; i++) {
+        const agentA = agents[i];
+        
+        // Check agent-obstacle collisions
+        for (const obstacle of obstacles) {
+          const distance = agentA.position.distanceTo(obstacle.position);
+          const collisionThreshold = agentA.radius + obstacle.size;
+          
+          if (distance < collisionThreshold) {
+            // Calculate reflection vector
+            const normal = new THREE.Vector3().subVectors(agentA.position, obstacle.position).normalize();
+            agentA.direction.reflect(normal);
+            
+            // Add some randomness to avoid getting stuck
+            agentA.direction.x += (Math.random() - 0.5) * 0.1;
+            agentA.direction.y += (Math.random() - 0.5) * 0.1;
+            agentA.direction.z += (Math.random() - 0.5) * 0.1;
+            agentA.direction.normalize().multiplyScalar(AGENT_SPEED);
+            
+            // Move away from obstacle
+            agentA.position.add(normal.multiplyScalar(collisionThreshold - distance + 0.1));
+            
+            // Create collision effect
+            const collisionPoint = new THREE.Vector3().addVectors(
+              agentA.position,
+              normal.clone().multiplyScalar(-agentA.radius)
+            );
+            
+            createCollisionEffect(collisionPoint, agentA.color, 30);
+            
+            // Increment collision counter
+            collisionCount++;
+            collisionCountEl.textContent = collisionCount;
+          }
+        }
+        
+        // Check agent-agent collisions
+        for (let j = i + 1; j < agents.length; j++) {
+          const agentB = agents[j];
+          
+          const distance = agentA.position.distanceTo(agentB.position);
+          const collisionThreshold = agentA.radius + agentB.radius;
+          
+          if (distance < collisionThreshold) {
+            // Calculate collision response
+            const normal = new THREE.Vector3().subVectors(agentA.position, agentB.position).normalize();
+            
+            // Exchange velocities (simplified physics)
+            const tempDir = agentA.direction.clone();
+            agentA.direction.copy(agentB.direction).reflect(normal);
+            agentB.direction.copy(tempDir).reflect(normal.clone().negate());
+            
+            // Move apart to avoid getting stuck
+            const correction = (collisionThreshold - distance + 0.1) * 0.5;
+            agentA.position.add(normal.clone().multiplyScalar(correction));
+            agentB.position.add(normal.clone().multiplyScalar(-correction));
+            
+            // Create collision effect
+            const collisionPoint = new THREE.Vector3().lerpVectors(agentA.position, agentB.position, 0.5);
+            createCollisionEffect(collisionPoint, agentA.color, 30);
+            
+            // Increment collision counter
+            collisionCount++;
+            collisionCountEl.textContent = collisionCount;
+          }
+        }
+      }
+    }
+    
+    function updateObstacles(delta) {
+      // Update each obstacle
+      for (const obstacle of obstacles) {
+        // Rotate obstacle
+        obstacle.mesh.rotation.x += obstacle.rotationSpeed.x;
+        obstacle.mesh.rotation.y += obstacle.rotationSpeed.y;
+        obstacle.mesh.rotation.z += obstacle.rotationSpeed.z;
+      }
+    }
+    
+    function updateParticles(delta) {
+      // Update each particle and remove dead ones
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const alive = particles[i].update(delta);
+        if (!alive) {
+          particles[i].remove();
+          particles.splice(i, 1);
+        }
+      }
+    }
+    
+    function onWindowResize() {
+      // Update camera aspect ratio
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      
+      // Update renderer and composer sizes
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      
+      // Update FXAA shader uniforms
+      const fxaaPass = composer.passes[2];
+      fxaaPass.uniforms['resolution'].value.set(
+        1 / (window.innerWidth * renderer.getPixelRatio()),
+        1 / (window.innerHeight * renderer.getPixelRatio())
+      );
+    }
+    
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      // Get delta time for smooth animation
+      const delta = clock.getDelta();
+      
+      // Update controls
+      controls.update();
+      
+      // Update simulation
+      if (agents.length > 0) {
+        updateAgents(delta);
+        checkCollisions();
+      }
+      
+      updateObstacles(delta);
+      updateParticles(delta);
+      
+      // Render the scene
+      composer.render();
+    }
+  </script>
+</body>
+</html>

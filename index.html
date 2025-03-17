@@ -1,869 +1,2493 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stunning 3D Pathfinder</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Defender</title>
+    <style>
+       <style> section of part1-html-structure.html */
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+		#ui, #planet-info, #instructions {
+    visibility: hidden;
+    opacity: 0;
+}
+        
+    </style>
+</head>
+<body>
+
+
+    <!-- Copy all the divs and HTML structure from part1-html-structure.html -->
+    <div id="container"></div>
+    <div id="ui">Solar System Defender | Score: <span id="score-display">0</span> | Aliens Destroyed: <span id="aliens-destroyed">0</span> | Time: <span id="time-display">60</span></div>
+    <div id="planet-info">
+        <div id="current-planet">Current Planet: None</div>
+        <div id="planet-details"></div>
+    </div>
+    <div id="instructions">
+        Use mouse to look around<br>
+        WASD or Arrow Keys to move<br>
+        Space to boost forward<br>
+        <strong>CLICK to shoot aliens and defend the solar system!</strong>
+    </div>
+
+    <!-- Include Three.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Combine all JavaScript files inside a single <script> tag -->
+    <script>
+        // Game variables
+let scene, camera, renderer;
+let stars = [];
+let planets = [];
+let orbits = [];
+let sun;
+let moveSpeed = 0.15;
+let velocity = new THREE.Vector3();
+let direction = new THREE.Vector3();
+let mouseMoveX = 0;
+let mouseMoveY = 0;
+let keyboard = {};
+let boostAvailable = true;
+let boostCooldown = 0;
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+let closestPlanet = null;
+let lasers = [];
+let planetHealth = {};
+let score = 0;
+let aliens = [];
+let alienPool = [];
+const POOL_SIZE = 10;
+let clock = new THREE.Clock();
+let alienSpawnRate = 3000; // ms between alien spawns
+let aliensDestroyed = 0;
+let gameTime = 100; // game time in seconds
+let gameActive = true;
+let deathStarHasFired = false;
+
+// Solar system data
+const solarSystemData = [
+    { name: "Mercury", distance: 30, size: 0.4, color: 0xaaaaaa, texturePath: null, rotationSpeed: 0.004, orbitSpeed: 0.008, details: "Closest planet to the Sun. Small and rocky with extreme temperature variations." },
+    { name: "Venus", distance: 45, size: 0.9, color: 0xe6c829, texturePath: null, rotationSpeed: 0.002, orbitSpeed: 0.006, details: "Similar in size to Earth but has a toxic atmosphere and extreme greenhouse effect." },
+    { name: "Earth", distance: 60, size: 1.0, color: 0x3366cc, texturePath: null, rotationSpeed: 0.01, orbitSpeed: 0.005, details: "Our home planet. The only known world with liquid water oceans and life." },
+    { name: "Mars", distance: 75, size: 0.5, color: 0xcc4400, texturePath: null, rotationSpeed: 0.008, orbitSpeed: 0.004, details: "The Red Planet. Has polar ice caps and evidence of ancient flowing water." },
+    { name: "Jupiter", distance: 100, size: 11, color: 0xc39b63, texturePath: null, rotationSpeed: 0.04, orbitSpeed: 0.002, details: "Largest planet in our solar system. A gas giant with a distinctive Great Red Spot." },
+    { name: "Saturn", distance: 135, size: 9, color: 0xc6a268, texturePath: null, rotationSpeed: 0.038, orbitSpeed: 0.0015, details: "Famous for its spectacular ring system. A gas giant with many moons." },
+    { name: "Uranus", distance: 170, size: 4, color: 0x66ccff, texturePath: null, rotationSpeed: 0.03, orbitSpeed: 0.0010, details: "An ice giant that rotates on its side. Has a blue-green color from methane in its atmosphere." },
+    { name: "Neptune", distance: 200, size: 3.8, color: 0x3355ff, texturePath: null, rotationSpeed: 0.032, orbitSpeed: 0.0008, details: "The windiest planet with the strongest storms. The most distant major planet." }
+];
+
+
+
+// Star Wars opening crawl implementation
+function addOpeningCrawl() {
+  // First add the Star Wars-specific styles to the document head
+  const starWarsStyles = document.createElement('style');
+  starWarsStyles.textContent = `
+    @keyframes stars {
+      0% { opacity: 0.5; }
+      50% { opacity: 1; }
+      100% { opacity: 0.5; }
     }
     
-    body {
-      margin: 0;
-      background: #000;
-      color: #fff;
-      font-family: 'Arial', sans-serif;
-      overflow: hidden;
-      background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+    @keyframes crawl {
+      0% {
+        transform: rotateX(25deg) translateZ(0);
+        top: 100%;
+      }
+      100% {
+        transform: rotateX(25deg) translateZ(-6000px);
+        top: -6000px;
+      }
     }
     
-    #scene-container {
+    .star {
       position: absolute;
-      width: 100%;
-      height: 100%;
+      width: 1px;
+      height: 1px;
+      background-color: white;
+      border-radius: 50%;
+      animation: stars 2s infinite ease-in-out;
+      animation-delay: calc(var(--delay) * 1s);
     }
     
-    .controls {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      z-index: 100;
-      display: flex;
-      gap: 15px;
-    }
-    
-    .control-btn {
-      background: rgba(0, 0, 0, 0.5);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #fff;
-      padding: 10px 20px;
-      border-radius: 30px;
-      cursor: pointer;
-      font-weight: bold;
-      backdrop-filter: blur(10px);
-      transition: all 0.3s;
-    }
-    
-    .control-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.5);
-    }
-    
-    .title {
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      font-size: 1.5rem;
-      color: white;
-      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
-      z-index: 100;
-      opacity: 0.7;
-    }
-    
-    .loading {
+    .star-wars-intro {
+      background-color: #000;
+      color: #FFDA00;
+      font-family: 'Arial', sans-serif;
+      font-weight: 700;
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      background: #000;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 1000;
-      transition: opacity 1s;
+      overflow: hidden;
+      perspective: 400px;
+      z-index: 9999;
     }
     
-    .loading-text {
-      font-size: 2rem;
-      color: white;
+    .star-wars-intro .main-logo {
+      position: absolute;
+      width: 100%;
+      height: auto;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+      opacity: 0;
+      animation: logo 4s ease-out forwards;
+    }
+    
+    .star-wars-intro .intro-text {
+      position: absolute;
+      top: 40%;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      font-size: 5vw; /* Increased from 4vw */
+      color: #4bd5ee;
+      opacity: 0;
+      animation: text 4s ease-out 1s forwards;
+    }
+    
+    @keyframes logo {
+      0% { opacity: 0; transform: translate(-50%, -50%) scale(2.5); }
+      20% { opacity: 1; }
+      90% { opacity: 1; transform: translate(-50%, -50%) scale(0.8); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(0.1); }
+    }
+    
+    @keyframes text {
+      0% { opacity: 0; }
+      20% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+    
+    .star-wars-intro .title-container {
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      width: 85%; /* Increased from 75% */
+      transform-origin: 50% 100%;
+      transform: translateX(-50%) rotateX(25deg);
+      animation: crawl 35s linear forwards;
+    }
+    
+    .star-wars-intro .title-content {
+      text-align: center;
+    }
+    
+    .star-wars-intro h1,
+    .star-wars-intro h2 {
+      font-family: 'Arial', sans-serif;
       text-transform: uppercase;
-      letter-spacing: 3px;
+      color: #FFDA00;
+      letter-spacing: 0.15em;
+      line-height: 1;
+      text-align: center;
     }
     
-    .info {
+    .star-wars-intro h1 {
+      font-size: 12vw; /* Increased from 10vw to 12vw */
+      margin-bottom: 0.3em;
+    }
+    
+    .star-wars-intro h2 {
+      font-size: 9vw; /* Increased from 7vw to 9vw */
+      margin-bottom: 1.5em;
+    }
+    
+    .star-wars-intro p {
+      color: #FFDA00;
+      font-family: 'Arial', sans-serif;
+      font-size: 5vw; /* Increased from 4vw to 5vw */
+      font-weight: 400;
+      line-height: 1.6em;
+      text-align: justify;
+      margin: 0 auto 1.2em auto;
+      width: 100%;
+    }
+    
+    .skip-btn {
       position: fixed;
-      top: 20px;
+      bottom: 20px;
       right: 20px;
-      padding: 15px;
-      background: rgba(0, 0, 0, 0.5);
-      border-radius: 10px;
-      z-index: 100;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      opacity: 0.7;
-      transition: opacity 0.3s;
+      background: rgba(255, 218, 0, 0.2);
+      color: #FFDA00;
+      border: 1px solid #FFDA00;
+      border-radius: 5px;
+      padding: 10px 20px;
+      font-family: 'Arial', sans-serif;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 10000;
+      transition: background-color 0.3s;
     }
     
-    .info:hover {
-      opacity: 1;
+    .skip-btn:hover {
+      background: rgba(255, 218, 0, 0.4);
     }
-    
-    .info p {
-      margin: 5px 0;
-      font-size: 0.9rem;
-    }
-  </style>
-</head>
-<body>
-  <div id="scene-container"></div>
-  
-  <div class="title">Pathfinder 3D</div>
-  
-  <div class="controls">
-    <button class="control-btn" id="add-agents">Add Agents</button>
-    <button class="control-btn" id="add-obstacles">Add Obstacles</button>
-    <button class="control-btn" id="reset">Reset</button>
-  </div>
-  
-  <div class="info">
-    <p>Agents: <span id="agent-count">5</span></p>
-    <p>Obstacles: <span id="obstacle-count">10</span></p>
-    <p>Collisions: <span id="collision-count">0</span></p>
-  </div>
-  
-  <div class="loading">
-    <div class="loading-text">Loading...</div>
-  </div>
 
-  <script type="module">
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/RGBELoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/EffectComposer.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/RenderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/postprocessing/ShaderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/shaders/FXAAShader.js"></script>
+    /* Force play button for music */
+    .force-play-btn {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(255, 218, 0, 0.2);
+      color: #FFDA00;
+      border: 1px solid #FFDA00;
+      border-radius: 5px;
+      padding: 10px 20px;
+      font-family: 'Arial', sans-serif;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 10000;
+      transition: background-color 0.3s;
+    }
     
-    // DOM Elements
-    const container = document.getElementById('scene-container');
-    const loading = document.querySelector('.loading');
-    const addAgentsBtn = document.getElementById('add-agents');
-    const addObstaclesBtn = document.getElementById('add-obstacles');
-    const resetBtn = document.getElementById('reset');
-    const agentCountEl = document.getElementById('agent-count');
-    const obstacleCountEl = document.getElementById('obstacle-count');
-    const collisionCountEl = document.getElementById('collision-count');
+    .force-play-btn:hover {
+      background: rgba(255, 218, 0, 0.4);
+    }
+  `;
+  document.head.appendChild(starWarsStyles);
+  
+  // Create the opening crawl container
+  const crawlContainer = document.createElement('div');
+  crawlContainer.className = 'star-wars-intro';
+  
+  // Add stars background (more realistic twinkling stars)
+  for (let i = 0; i < 500; i++) {
+    const star = document.createElement('div');
+    star.className = 'star';
+    star.style.top = `${Math.random() * 100}%`;
+    star.style.left = `${Math.random() * 100}%`;
+    star.style.width = `${Math.random() * 3 + 1}px`;
+    star.style.height = star.style.width;
+    star.style.setProperty('--delay', Math.random() * 3); // Random animation delay
+    crawlContainer.appendChild(star);
+  }
+  
+  // Add the "A long time ago" intro text
+  const introText = document.createElement('div');
+  introText.className = 'intro-text';
+  introText.textContent = 'A long time ago, in a galaxy far, far away....';
+  crawlContainer.appendChild(introText);
+  
+  // Add the Star Wars-style logo
+  const logo = document.createElement('div');
+  logo.className = 'main-logo';
+  logo.textContent = 'SOLAR SYSTEM DEFENDER';
+  logo.style.color = '#FFDA00';
+  logo.style.fontSize = '10vw'; // Increased from 8vw to 10vw
+  logo.style.fontWeight = 'bold';
+  logo.style.textAlign = 'center';
+  logo.style.textTransform = 'uppercase';
+  logo.style.letterSpacing = '0.2em';
+  logo.style.textShadow = '2px 2px 10px rgba(255, 218, 0, 0.6)';
+  crawlContainer.appendChild(logo);
+  
+  // Create the crawl text container
+  const titleContainer = document.createElement('div');
+  titleContainer.className = 'title-container';
+  titleContainer.style.animation = 'none'; // Start with animation disabled
+  
+  // Add the crawl text content
+  const titleContent = document.createElement('div');
+  titleContent.className = 'title-content';
+  titleContent.innerHTML = `
+    <h1>Episode I</h1>
+    <h2>THE SOLAR SYSTEM UNDER SIEGE</h2>
+    <p>Alien forces have launched a massive invasion of our solar system! Their deadly fleet threatens to destroy the sun and all planets in their path.</p>
+    <p>You are humanity's last hope. Take control of your advanced spacecraft and defend the solar system from the alien menace.</p>
+    <p>Use your weapons to destroy the invaders before they reach the planets. Be careful with your aim - friendly fire against our own planets will cost you points.</p>
+    <p>The Death Star approaches from the outer rim. Its massive laser weapon could spell doom for our entire system if not stopped. The time to act is now!</p>
+  `;
+  titleContainer.appendChild(titleContent);
+  crawlContainer.appendChild(titleContainer);
+  
+  // Add skip button
+  const skipButton = document.createElement('button');
+  skipButton.className = 'skip-btn';
+  skipButton.textContent = 'Skip Intro';
+  skipButton.addEventListener('click', () => {
+    fadeOutAndRemoveCrawl();
+  });
+  crawlContainer.appendChild(skipButton);
+  
+  // Add force play button for music (as a fallback)
+  const playButton = document.createElement('button');
+  playButton.className = 'force-play-btn';
+  playButton.textContent = 'Play Music';
+  playButton.addEventListener('click', () => {
+    const music = document.getElementById('theme-music');
+    if (music) {
+      music.play().catch(e => console.log('Still could not play audio'));
+    }
+  });
+  crawlContainer.appendChild(playButton);
+  
+  // Add the crawl to the body
+  document.body.appendChild(crawlContainer);
+  
+  // Add audio element for Star Wars theme
+  const audio = document.createElement('audio');
+  audio.id = 'theme-music';
+  audio.src = 'https://ia800209.us.archive.org/24/items/StarWarsThemeSongByJohnWilliams/Star%20Wars%20Theme%20Song%20By%20John%20Williams.mp3';
+  audio.volume = 0.8; // Increased from 0.7 to 0.8
+  audio.loop = false; // Don't loop the music
+  document.body.appendChild(audio);
+  
+  // Play music immediately
+  setTimeout(() => {
+    const music = document.getElementById('theme-music');
+    if (music) {
+      // Try to autoplay immediately
+      music.play().catch(e => {
+        console.log('Auto-play prevented by browser - showing play button');
+        playButton.style.display = 'block';
+      });
+    }
+  }, 100); // Short delay to ensure audio element is ready
+  
+  // Hide the play button if music starts playing
+  audio.addEventListener('playing', () => {
+    playButton.style.display = 'none';
+  });
+  
+  // Begin the animation sequence
+  let sequenceStarted = false;
+  function startSequence() {
+    if (sequenceStarted) return;
+    sequenceStarted = true;
     
-    // Three.js Variables
-    let camera, scene, renderer, composer;
-    let controls, clock;
-    let agentCount = 5;
-    let obstacleCount = 10;
-    let collisionCount = 0;
+    // Start by showing the intro text
+    introText.style.opacity = '1';
     
-    // Environment
-    let agents = [];
-    let obstacles = [];
-    let particles = [];
-    let envmap;
-    
-    // Simulation Settings
-    const BOUNDARY_SIZE = 100;
-    const AGENT_SPEED = 15;
-    const MAX_TRAIL_LENGTH = 200;
-    
-    // Initialize
-    init();
-    
-    async function init() {
-      // Clock for frame-independent animation
-      clock = new THREE.Clock();
+    // After intro text, show the logo
+    setTimeout(() => {
+      introText.style.opacity = '0';
+      logo.style.opacity = '1';
       
-      // Create scene
-      scene = new THREE.Scene();
-      scene.fog = new THREE.FogExp2(0x000000, 0.001);
-      
-      // Create camera
-      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 1000);
-      camera.position.set(0, 10, 150);
-      
-      // Create renderer
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.5;
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      container.appendChild(renderer.domElement);
-      
-      // Initialize camera controls
-      controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
-      controls.maxDistance = 300;
-      controls.minDistance = 30;
-      
-      // Set up post-processing
-      setupPostProcessing();
-      
-      // Load environment map
-      await loadEnvironment();
-      
-      // Set up lighting
-      setupLighting();
-      
-      // Create environment
-      createEnvironment();
-      
-      // Create initial agents & obstacles
-      createAgents(agentCount);
-      createObstacles(obstacleCount);
-      
-      // Add event listeners
-      window.addEventListener('resize', onWindowResize);
-      addAgentsBtn.addEventListener('click', () => addAgents(2));
-      addObstaclesBtn.addEventListener('click', () => addObstacles(3));
-      resetBtn.addEventListener('click', reset);
-      
-      // Hide loading screen after a short delay
+      // After logo, start the crawl
       setTimeout(() => {
-        loading.style.opacity = 0;
-        setTimeout(() => loading.style.display = 'none', 1000);
+        logo.style.opacity = '0';
+        
+        // Start the crawl animation
+        setTimeout(() => {
+          titleContainer.style.animation = 'crawl 35s linear forwards';
+        }, 500);
+      }, 4000);
+    }, 4000);
+  }
+  
+  // Start the sequence after a short delay
+  setTimeout(startSequence, 100);
+  
+  // Auto-skip after crawl completes
+  setTimeout(() => {
+    fadeOutAndRemoveCrawl();
+  }, 42000); // Total time for the intro
+  
+  // Function to fade out and remove the crawl
+  function fadeOutAndRemoveCrawl() {
+    const container = document.querySelector('.star-wars-intro');
+    const music = document.getElementById('theme-music');
+    
+    if (container) {
+      // Fade out music if playing
+      if (music && !music.paused) {
+        const fadeAudio = setInterval(() => {
+          if (music.volume > 0.1) {
+            music.volume -= 0.1;
+          } else {
+            music.pause();
+            clearInterval(fadeAudio);
+          }
+        }, 100);
+      }
+      
+      // Fade out the crawl
+      container.style.transition = 'opacity 1s ease-out';
+      container.style.opacity = '0';
+      
+      setTimeout(() => {
+        if (container.parentNode) {
+          container.parentNode.removeChild(container);
+        }
+        if (music && music.parentNode) {
+          music.parentNode.removeChild(music);
+        }
+        // Initialize the game
+        init();
       }, 1000);
-      
-      // Start animation loop
-      animate();
     }
+  }
+}
+
+// Initialize the scene
+function init() {
+    // Create scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000011);
     
-    function setupPostProcessing() {
-      // Create render pass
-      const renderPass = new RenderPass(scene, camera);
-      
-      // Setup bloom pass
-      const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight),
-        1.0,   // strength
-        0.4,   // radius
-        0.85   // threshold
-      );
-      
-      // Add FXAA pass for anti-aliasing
-      const fxaaPass = new ShaderPass(FXAAShader);
-      fxaaPass.uniforms['resolution'].value.set(
-        1 / (window.innerWidth * renderer.getPixelRatio()),
-        1 / (window.innerHeight * renderer.getPixelRatio())
-      );
-      
-      // Setup composer
-      composer = new EffectComposer(renderer);
-      composer.addPass(renderPass);
-      composer.addPass(bloomPass);
-      composer.addPass(fxaaPass);
-    }
+    // Create camera
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 50, 100);
     
-    async function loadEnvironment() {
-      return new Promise((resolve) => {
-        new RGBELoader()
-          .setPath('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/equirectangular/')
-          .load('royal_esplanade_1k.hdr', function (texture) {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            
-            scene.environment = texture;
-            envmap = texture;
-            
-            resolve();
-          });
-      });
-    }
+    // Create renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.getElementById('container').appendChild(renderer.domElement);
     
-    function setupLighting() {
-      // Add ambient light
-      const ambientLight = new THREE.AmbientLight(0x101010, 0.5);
-      scene.add(ambientLight);
-      
-      // Add directional light
-      const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
-      mainLight.position.set(50, 50, 50);
-      mainLight.castShadow = true;
-      mainLight.shadow.mapSize.width = 2048;
-      mainLight.shadow.mapSize.height = 2048;
-      mainLight.shadow.camera.near = 0.5;
-      mainLight.shadow.camera.far = 500;
-      mainLight.shadow.camera.left = -100;
-      mainLight.shadow.camera.right = 100;
-      mainLight.shadow.camera.top = 100;
-      mainLight.shadow.camera.bottom = -100;
-      scene.add(mainLight);
-      
-      // Add point lights for atmosphere
-      const colors = [0x3677e8, 0xff4d5f, 0x00ffaa, 0xff9000];
-      for (let i = 0; i < 4; i++) {
-        const intensity = 3 + Math.random() * 2;
-        const distance = 80 + Math.random() * 40;
-        const pointLight = new THREE.PointLight(colors[i % colors.length], intensity, distance);
+    // Add ambient light
+    const ambientLight = new THREE.AmbientLight(0x333344);
+    scene.add(ambientLight);
+    
+    // Create starfield
+    createStars();
+    
+    // Create sun
+    createSun();
+    
+    // Create planets
+    createPlanets();
+	
+	// Add Death Star
+    createDeathStar();
+    
+    // Set up event listeners
+    window.addEventListener('resize', onWindowResize);
+    document.addEventListener('keydown', keyDown);
+    document.addEventListener('keyup', keyUp);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('click', onMouseClick);
+    
+    // Start alien invasion
+    startAlienInvasion();
+    
+    // Start game timer
+    startGameTimer();
+    
+    // Start animation loop
+    animate();
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function keyDown(event) {
+    keyboard[event.keyCode] = true;
+}
+
+function keyUp(event) {
+    keyboard[event.keyCode] = false;
+}
+
+function onMouseMove(event) {
+    // Calculate mouse movement relative to window center
+    mouseMoveX = (event.clientX - window.innerWidth / 2) / 100;
+    mouseMoveY = (event.clientY - window.innerHeight / 2) / 100;
+    
+    // Update mouse position for raycasting
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+}
+
+function onMouseClick(event) {
+    // Update mouse position for accurate shooting
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    
+    // Create a laser beam from the camera
+    shootLaser();
+}
+
+
+
+
+// Start the game when the page is loaded
+window.onload = function() {
+  addOpeningCrawl();
+};
+
+
         
-        const angle = (i / 4) * Math.PI * 2;
-        const radius = 80;
-        pointLight.position.set(
-          radius * Math.cos(angle),
-          -30 + Math.random() * 60,
-          radius * Math.sin(angle)
-        );
-        
-        scene.add(pointLight);
-      }
-    }
-    
-    function createEnvironment() {
-      // Create a boundary box
-      const boxGeometry = new THREE.BoxGeometry(
-        BOUNDARY_SIZE * 2,
-        BOUNDARY_SIZE * 2,
-        BOUNDARY_SIZE * 2
-      );
-      
-      const boxMaterial = new THREE.MeshBasicMaterial({
+       // Create the star field background
+function createStars() {
+    const starGeometry = new THREE.BufferGeometry();
+    const starMaterial = new THREE.PointsMaterial({
         color: 0xffffff,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.05
-      });
-      
-      const box = new THREE.Mesh(boxGeometry, boxMaterial);
-      scene.add(box);
-      
-      // Create a ground plane with mirror-like reflection
-      const groundGeometry = new THREE.PlaneGeometry(BOUNDARY_SIZE * 3, BOUNDARY_SIZE * 3);
-      const groundMaterial = new THREE.MeshPhysicalMaterial({
-        color: 0x000000,
-        metalness: 0.1,
-        roughness: 0.3,
-        reflectivity: 1.0,
-        clearcoat: 1.0,
-        clearcoatRoughness: 0.2,
-        envMap: envmap
-      });
-      
-      const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-      ground.rotation.x = -Math.PI / 2;
-      ground.position.y = -BOUNDARY_SIZE;
-      ground.receiveShadow = true;
-      scene.add(ground);
-      
-      // Add a subtle grid
-      const gridHelper = new THREE.GridHelper(BOUNDARY_SIZE * 2, 40, 0x111111, 0x111111);
-      gridHelper.position.y = -BOUNDARY_SIZE + 0.1;
-      gridHelper.material.opacity = 0.1;
-      gridHelper.material.transparent = true;
-      scene.add(gridHelper);
-      
-      // Add some background stars
-      const starGeometry = new THREE.BufferGeometry();
-      const starVertices = [];
-      
-      for (let i = 0; i < 2000; i++) {
-        const x = THREE.MathUtils.randFloatSpread(2000);
-        const y = THREE.MathUtils.randFloatSpread(2000);
-        const z = THREE.MathUtils.randFloatSpread(2000);
-        
-        // Ensure stars are outside the boundary
-        const dist = Math.sqrt(x*x + y*y + z*z);
-        if (dist < BOUNDARY_SIZE * 2) continue;
-        
+        size: 0.1,
+        transparent: true
+    });
+    
+    const starVertices = [];
+    for (let i = 0; i < 8000; i++) {
+        const x = (Math.random() - 0.5) * 2000;
+        const y = (Math.random() - 0.5) * 2000;
+        const z = (Math.random() - 0.5) * 2000;
         starVertices.push(x, y, z);
-      }
-      
-      starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-      
-      const starMaterial = new THREE.PointsMaterial({
-        color: 0xffffff,
-        size: 1,
-        transparent: true,
-        opacity: 0.8,
-        sizeAttenuation: false
-      });
-      
-      const stars = new THREE.Points(starGeometry, starMaterial);
-      scene.add(stars);
     }
     
-    function createAgents(count) {
-      // Define a palette of glowing colors
-      const colors = [
-        0x00aaff, // Bright blue
-        0x00ffaa, // Cyan
-        0xff1493, // Deep pink
-        0xffaa00, // Orange
-        0xff00aa, // Magenta
-        0x9900ff, // Purple
-        0x00ff00, // Green
-        0xff4d4d  // Red
-      ];
-      
-      for (let i = 0; i < count; i++) {
-        // Create a sphere geometry
-        const radius = 1.5 + Math.random() * 1.5;
-        const geometry = new THREE.SphereGeometry(radius, 32, 32);
+    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const starField = new THREE.Points(starGeometry, starMaterial);
+    scene.add(starField);
+    stars.push(starField);
+}
+
+// Create the sun at the center of the solar system
+
+function createSun() {
+    // Create the sun at the center of the solar system
+    const sunGeometry = new THREE.SphereGeometry(10, 64, 64); // Higher resolution
+    
+    // Create canvas for dynamic sun texture
+    const sunCanvas = document.createElement('canvas');
+    sunCanvas.width = 1024;
+    sunCanvas.height = 512;
+    const ctx = sunCanvas.getContext('2d');
+
+    // Create gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+    gradient.addColorStop(0, '#ffdd44');
+    gradient.addColorStop(0.5, '#ffcc22');
+    gradient.addColorStop(1, '#ff8800');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 1024, 512);
+
+    // Add bands like Jupiter
+    for (let i = 0; i < 20; i++) {
+        ctx.beginPath();
+        const y = Math.random() * 512;
+        const height = 5 + Math.random() * 15;
+        ctx.rect(0, y, 1024, height);
+        ctx.fillStyle = `rgba(255, ${150 + Math.random() * 80}, 0, ${0.1 + Math.random() * 0.2})`;
+        ctx.fill();
+    }
+
+    // Add some solar spots
+    for (let i = 0; i < 15; i++) {
+        ctx.beginPath();
+        const x = Math.random() * 1024;
+        const y = Math.random() * 512;
+        const radius = 5 + Math.random() * 15;
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 200, 50, 0.6)';
+        ctx.fill();
+    }
+
+    // Create texture from canvas
+    const sunTexture = new THREE.CanvasTexture(sunCanvas);
+    sunTexture.wrapS = THREE.RepeatWrapping;
+    sunTexture.wrapT = THREE.RepeatWrapping;
+
+    // Create material with texture
+    const sunMaterial = new THREE.MeshStandardMaterial({
+        map: sunTexture,
+        emissive: 0xffaa22,
+        emissiveIntensity: 0.8,
+        roughness: 0.3,
+        metalness: 0.0
+    });
+    
+    sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    scene.add(sun);
+    
+    // Add multiple layers of glow with different colors for more realistic effect
+    const sunGlow1 = new THREE.Mesh(
+        new THREE.SphereGeometry(11, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.4
+        })
+    );
+    sun.add(sunGlow1);
+    
+    const sunGlow2 = new THREE.Mesh(
+        new THREE.SphereGeometry(14, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.3
+        })
+    );
+    sun.add(sunGlow2);
+    
+    const sunGlow3 = new THREE.Mesh(
+        new THREE.SphereGeometry(18, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0xff7700,
+            transparent: true,
+            opacity: 0.25
+        })
+    );
+    sun.add(sunGlow3);
+
+    // Outer red glow
+    const sunGlow4 = new THREE.Mesh(
+        new THREE.SphereGeometry(25, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0xff3300,
+            transparent: true,
+            opacity: 0.15
+        })
+    );
+    sun.add(sunGlow4);
+
+    // Distant atmosphere halo
+    const sunGlow5 = new THREE.Mesh(
+        new THREE.SphereGeometry(40, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0xff5500,
+            transparent: true,
+            opacity: 0.05
+        })
+    );
+    sun.add(sunGlow5);
+    
+    // Add brighter light from the sun
+    const sunLight = new THREE.PointLight(0xffffff, 3.0, 1000);
+    sun.add(sunLight);
+    
+    // Add subtle animation to sun
+    animateSun();
+    
+    // Add subtle rotation to show the texture movement
+    function rotateSun() {
+        sun.rotation.y += 0.001;
+        requestAnimationFrame(rotateSun);
+    }
+    rotateSun();
+}
+
+function addEnhancedSunCorona() {
+    // Longer primary spikes
+    for (let i = 0; i < 16; i++) {
+        const angle = (i / 16) * Math.PI * 2;
+        const length = 30 + Math.random() * 20;
         
-        // Create a glowing material
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        const material = new THREE.MeshPhysicalMaterial({
-          color: color,
-          emissive: color,
-          emissiveIntensity: 0.5,
-          metalness: 0.9,
-          roughness: 0.1,
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.1,
-          reflectivity: 1.0,
-          envMap: envmap
-        });
-        
-        // Create the mesh
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        
-        // Random position within boundary
-        const position = new THREE.Vector3(
-          THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
-          THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
-          THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6)
+        const spike = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.2, 1.0, length, 8),
+            new THREE.MeshBasicMaterial({
+                color: 0xffee88,
+                transparent: true,
+                opacity: 0.3
+            })
         );
         
-        // Make sure we don't spawn below the ground
-        if (position.y < -BOUNDARY_SIZE + radius) {
-          position.y = -BOUNDARY_SIZE + radius + 5;
-        }
+        // Position and rotate the spike
+        spike.position.set(
+            Math.cos(angle) * 10,
+            Math.sin(angle) * 10,
+            0
+        );
+        spike.lookAt(0, 0, 0);
+        spike.rotateX(Math.PI / 2);
         
-        mesh.position.copy(position);
+        // Add random rotation for variety
+        spike.rotation.z = Math.random() * Math.PI;
         
-        // Random direction
-        const direction = new THREE.Vector3(
-          THREE.MathUtils.randFloatSpread(2),
-          THREE.MathUtils.randFloatSpread(2),
-          THREE.MathUtils.randFloatSpread(2)
-        ).normalize().multiplyScalar(AGENT_SPEED * (0.7 + Math.random() * 0.6));
-        
-        // Add a point light attached to the agent
-        const light = new THREE.PointLight(color, 1.0, 10);
-        mesh.add(light);
-        
-        // Create a trail with custom curve
-        const trailMaterial = new THREE.LineBasicMaterial({
-          color: color,
-          transparent: true,
-          opacity: 0.7
-        });
-        
-        const trailGeometry = new THREE.BufferGeometry();
-        const trail = new THREE.Line(trailGeometry, trailMaterial);
-        scene.add(trail);
-        
-        // Add the agent to the scene
-        scene.add(mesh);
-        
-        // Add to agents array
-        agents.push({
-          mesh: mesh,
-          position: position,
-          direction: direction,
-          radius: radius,
-          color: color,
-          trail: trail,
-          trailPoints: [position.clone()],
-          light: light
-        });
-      }
-      
-      // Update agent count
-      agentCount += count;
-      agentCountEl.textContent = agentCount;
+        sun.add(spike);
     }
     
-    function createObstacles(count) {
-      // Array of geometries to choose from
-      const geometryOptions = [
-        () => new THREE.OctahedronGeometry(6 + Math.random() * 4, 0), // Diamond
-        () => new THREE.IcosahedronGeometry(6 + Math.random() * 4, 0), // Icosahedron
-        () => new THREE.TetrahedronGeometry(6 + Math.random() * 4, 0), // Tetrahedron
-        () => new THREE.TorusKnotGeometry(5 + Math.random() * 2, 1.5, 32, 8) // Torus knot
-      ];
-      
-      for (let i = 0; i < count; i++) {
-        // Choose a random geometry
-        const geometryFunc = geometryOptions[Math.floor(Math.random() * geometryOptions.length)];
-        const geometry = geometryFunc();
+    // Add shorter secondary spikes for more detail
+    for (let i = 0; i < 24; i++) {
+        const angle = (i / 24) * Math.PI * 2 + (Math.random() * 0.2);
+        const length = 15 + Math.random() * 10;
         
-        // Generate a random color with high saturation and brightness
-        const hue = Math.random();
-        const material = new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color().setHSL(hue, 0.9, 0.6),
-          metalness: 0.2 + Math.random() * 0.6,
-          roughness: 0.1,
-          clearcoat: 1.0,
-          clearcoatRoughness: 0.1,
-          envMap: envmap
+        const spike = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.1, 0.8, length, 6),
+            new THREE.MeshBasicMaterial({
+                color: 0xffaa44,
+                transparent: true,
+                opacity: 0.2
+            })
+        );
+        
+        // Position and rotate the spike
+        spike.position.set(
+            Math.cos(angle) * 10,
+            Math.sin(angle) * 10,
+            0
+        );
+        spike.lookAt(0, 0, 0);
+        spike.rotateX(Math.PI / 2);
+        
+        // Random rotation and slight position offset
+        spike.rotation.z = Math.random() * Math.PI;
+        
+        sun.add(spike);
+    }
+}
+function addSolarFlares() {
+    for (let i = 0; i < 5; i++) {
+        const flareGeometry = new THREE.SphereGeometry(1.5 + Math.random() * 2, 16, 16);
+        flareGeometry.scale(1, 0.4, 1);
+        
+        const flareMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffaa22,
+            transparent: true,
+            opacity: 0.7
         });
         
-        // Create the mesh
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        const flare = new THREE.Mesh(flareGeometry, flareMaterial);
         
-        // Random position within boundary
-        let position;
-        let tooClose = true;
+        // Position flare on the sun's surface
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 10;
+        flare.position.set(
+            Math.cos(angle) * radius,
+            Math.sin(angle) * radius * 0.3,
+            Math.sin(angle) * radius
+        );
         
-        // Make sure obstacles don't spawn too close to existing agents or obstacles
-        while (tooClose) {
-          position = new THREE.Vector3(
-            THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
-            THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6),
-            THREE.MathUtils.randFloatSpread(BOUNDARY_SIZE * 1.6)
-          );
-          
-          // Make sure we don't spawn below the ground
-          if (position.y < -BOUNDARY_SIZE + 6) {
-            position.y = -BOUNDARY_SIZE + 6;
-          }
-          
-          tooClose = false;
-          
-          // Check distance to agents
-          for (const agent of agents) {
-            if (position.distanceTo(agent.position) < 20) {
-              tooClose = true;
-              break;
+        // Store animation data
+        flare.userData = {
+            originalPosition: flare.position.clone(),
+            speed: 0.01 + Math.random() * 0.02,
+            angle: angle,
+            radius: radius,
+            time: Math.random() * 100
+        };
+        
+        sun.add(flare);
+        
+        // Animate flare movement
+        function animateFlare() {
+            flare.userData.time += flare.userData.speed;
+            
+            // Move flare around the sun's surface
+            flare.position.x = Math.cos(flare.userData.angle + flare.userData.time) * flare.userData.radius;
+            flare.position.z = Math.sin(flare.userData.angle + flare.userData.time) * flare.userData.radius;
+            
+            // Scale flare for pulsing effect
+            const scale = 1 + Math.sin(flare.userData.time * 2) * 0.3;
+            flare.scale.set(scale, scale, scale);
+            
+            requestAnimationFrame(animateFlare);
+        }
+        
+        animateFlare();
+    }
+}
+
+
+// Add pulsing animation to the sun
+function animateSun() {
+    const initialScale = sun.scale.x;
+    const pulseAmplitude = 0.05;
+    const pulseSpeed = 0.008;
+    
+    // Add a subtle wobble effect
+    let time = 0;
+    
+    function updateSunAnimation() {
+        time += 0.01;
+        // Main pulsing effect
+        const pulseFactor = Math.sin(Date.now() * pulseSpeed) * pulseAmplitude + initialScale;
+        sun.scale.set(pulseFactor, pulseFactor, pulseFactor);
+        
+        // Subtle corona rotation
+        sun.children.forEach((child, index) => {
+            if (index > 4) { // Only rotate the corona spikes, not the glow layers
+                child.rotation.z += 0.0003 * (index % 2 === 0 ? 1 : -1);
             }
-          }
-          
-          // Check distance to other obstacles
-          if (!tooClose) {
-            for (const obstacle of obstacles) {
-              if (position.distanceTo(obstacle.position) < 25) {
-                tooClose = true;
-                break;
-              }
-            }
-          }
-        }
-        
-        mesh.position.copy(position);
-        
-        // Random rotation
-        mesh.rotation.set(
-          Math.random() * Math.PI * 2,
-          Math.random() * Math.PI * 2,
-          Math.random() * Math.PI * 2
-        );
-        
-        // Add random rotation speeds
-        const rotationSpeed = new THREE.Vector3(
-          (Math.random() - 0.5) * 0.01,
-          (Math.random() - 0.5) * 0.01,
-          (Math.random() - 0.5) * 0.01
-        );
-        
-        // Add the obstacle to the scene
-        scene.add(mesh);
-        
-        // Add to obstacles array
-        obstacles.push({
-          mesh: mesh,
-          position: position,
-          color: material.color,
-          size: 6, // Average size
-          rotationSpeed: rotationSpeed
-        });
-      }
-      
-      // Update obstacle count
-      obstacleCount += count;
-      obstacleCountEl.textContent = obstacleCount;
-    }
-    
-    // Create particles for collision effects
-    class Particle {
-      constructor(position, color) {
-        const size = 0.5 + Math.random() * 1.0;
-        const geometry = new THREE.SphereGeometry(size, 8, 8);
-        const material = new THREE.MeshBasicMaterial({
-          color: color,
-          transparent: true,
-          opacity: 1.0
         });
         
-        this.mesh = new THREE.Mesh(geometry, material);
-        this.mesh.position.copy(position);
-        
-        // Random velocity
-        this.velocity = new THREE.Vector3(
-          (Math.random() - 0.5) * 5,
-          (Math.random() - 0.5) * 5,
-          (Math.random() - 0.5) * 5
-        );
-        
-        this.life = 60; // Frames to live
-        scene.add(this.mesh);
-      }
-      
-      update(delta) {
-        // Move based on velocity
-        this.mesh.position.add(this.velocity.clone().multiplyScalar(delta * 30));
-        
-        // Slow down
-        this.velocity.multiplyScalar(0.96);
-        
-        // Age
-        this.life--;
-        
-        // Fade out
-        this.mesh.material.opacity = this.life / 60;
-        
-        // Scale down
-        const scale = this.life / 60;
-        this.mesh.scale.set(scale, scale, scale);
-        
-        // Return true if still alive, false if dead
-        return this.life > 0;
-      }
-      
-      remove() {
-        scene.remove(this.mesh);
-        this.mesh.geometry.dispose();
-        this.mesh.material.dispose();
-      }
+        requestAnimationFrame(updateSunAnimation);
     }
     
-    function createCollisionEffect(position, color, count = 20) {
-      for (let i = 0; i < count; i++) {
-        particles.push(new Particle(position, color));
-      }
-    }
-    
-    function addAgents(count) {
-      createAgents(count);
-    }
-    
-    function addObstacles(count) {
-      createObstacles(count);
-    }
-    
-    function reset() {
-      // Remove all agents
-      for (const agent of agents) {
-        scene.remove(agent.mesh);
-        scene.remove(agent.trail);
-      }
-      
-      // Remove all obstacles
-      for (const obstacle of obstacles) {
-        scene.remove(obstacle.mesh);
-      }
-      
-      // Remove all particles
-      for (const particle of particles) {
-        particle.remove();
-      }
-      
-      // Clear arrays
-      agents = [];
-      obstacles = [];
-      particles = [];
-      
-      // Reset counters
-      agentCount = 0;
-      obstacleCount = 0;
-      collisionCount = 0;
-      
-      // Update display
-      agentCountEl.textContent = agentCount;
-      obstacleCountEl.textContent = obstacleCount;
-      collisionCountEl.textContent = collisionCount;
-      
-      // Create new objects
-      createAgents(5);
-      createObstacles(10);
-    }
-    
-    function updateAgents(delta) {
-      // Update each agent
-      for (const agent of agents) {
-        // Move agent
-        agent.position.add(agent.direction.clone().multiplyScalar(delta));
-        agent.mesh.position.copy(agent.position);
+    updateSunAnimation();
+}
+
+// Create all planets in the solar system
+function createPlanets() {
+    // Create all planets based on the solar system data
+    solarSystemData.forEach(planetData => {
+        // Initialize planet health
+        planetHealth[planetData.name] = 100;
         
-        // Add rotation for visual effect
-        agent.mesh.rotation.x += delta * 0.5;
-        agent.mesh.rotation.y += delta * 0.3;
+        // Create orbit
+        const orbitGeometry = new THREE.RingGeometry(planetData.distance - 0.2, planetData.distance + 0.2, 64);
+        const orbitMaterial = new THREE.MeshBasicMaterial({
+            color: 0x444444,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.3
+        });
+        const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+        orbit.rotation.x = Math.PI / 2;
+        scene.add(orbit);
+        orbits.push(orbit);
         
-        // Update trail
-        agent.trailPoints.push(agent.position.clone());
-        if (agent.trailPoints.length > MAX_TRAIL_LENGTH) {
-          agent.trailPoints.shift();
+        // Create planet
+        const planetGeometry = new THREE.SphereGeometry(planetData.size, 32, 32);
+        const planetMaterial = new THREE.MeshStandardMaterial({
+            color: planetData.color,
+            roughness: 0.7,
+            metalness: 0.1
+        });
+        
+        const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+        
+        // Position planet on its orbit
+        const angle = Math.random() * Math.PI * 2;
+        planet.position.x = Math.cos(angle) * planetData.distance;
+        planet.position.z = Math.sin(angle) * planetData.distance;
+        
+        // Store planet data
+        planet.userData = {
+            name: planetData.name,
+            details: planetData.details,
+            distance: planetData.distance,
+            orbitAngle: angle,
+            orbitSpeed: planetData.orbitSpeed,
+            rotationSpeed: planetData.rotationSpeed
+        };
+        
+        scene.add(planet);
+        planets.push(planet);
+        
+        // Special case: Add rings to Saturn
+        if (planetData.name === "Saturn") {
+            const ringGeometry = new THREE.RingGeometry(planetData.size * 1.4, planetData.size * 2.2, 64);
+            const ringMaterial = new THREE.MeshStandardMaterial({
+                color: 0xd6c69a,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.rotation.x = Math.PI / 2.5;
+            planet.add(ring);
         }
-        
-        // Update trail geometry
-        const geometry = new THREE.BufferGeometry().setFromPoints(agent.trailPoints);
-        agent.trail.geometry.dispose();
-        agent.trail.geometry = geometry;
-        
-        // Check boundary collisions
-        const boundarySize = BOUNDARY_SIZE;
-        let collided = false;
-        
-        if (agent.position.x - agent.radius < -boundarySize || agent.position.x + agent.radius > boundarySize) {
-          agent.direction.x = -agent.direction.x;
-          agent.position.x = Math.max(-boundarySize + agent.radius, Math.min(boundarySize - agent.radius, agent.position.x));
-          collided = true;
-        }
-        
-        if (agent.position.y - agent.radius < -boundarySize || agent.position.y + agent.radius > boundarySize) {
-          agent.direction.y = -agent.direction.y;
-          agent.position.y = Math.max(-boundarySize + agent.radius, Math.min(boundarySize - agent.radius, agent.position.y));
-          collided = true;
-        }
-        
-        if (agent.position.z - agent.radius < -boundarySize || agent.position.z + agent.radius > boundarySize) {
-          agent.direction.z = -agent.direction.z;
-          agent.position.z = Math.max(-boundarySize + agent.radius, Math.min(boundarySize - agent.radius, agent.position.z));
-          collided = true;
-        }
-        
-        // Create effect on boundary collision
-        if (collided) {
-          createCollisionEffect(agent.position, agent.color, 10);
-        }
-      }
-    }
+    });
+}
+
+// Create an alien ship
+function createAlien() {
+    return getAlienFromPool();
+}
+
+// Create Death Star-like alien mothership
+// Create Death Star-like alien mothership
+// Create Death Star-like alien mothership
+// Create Death Star-like alien mothership
+// Create Death Star-like alien mothership
+// Create Death Star-like alien mothership
+// Create Death Star-like alien mothership
+function createDeathStar() {
+    // Create the base sphere for the Death Star
+    const deathStarGeometry = new THREE.SphereGeometry(30, 32, 32);
+    const deathStarMaterial = new THREE.MeshStandardMaterial({
+        color: 0x444444, // Lighter color so details are more visible
+        roughness: 0.7,
+        metalness: 0.6,
+    });
     
-    function checkCollisions() {
-      // Check agent-agent collisions
-      for (let i = 0; i < agents.length; i++) {
-        const agentA = agents[i];
+    const deathStar = new THREE.Group();
+    const deathStarBody = new THREE.Mesh(deathStarGeometry, deathStarMaterial);
+    deathStar.add(deathStarBody);
+    
+    // Create the concave dish/superlaser
+    const dishGeometry = new THREE.SphereGeometry(15, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+    const dishMaterial = new THREE.MeshStandardMaterial({
+        color: 0x222222,
+        roughness: 0.5,
+        metalness: 0.7,
+        side: THREE.DoubleSide
+    });
+    const dish = new THREE.Mesh(dishGeometry, dishMaterial);
+    dish.position.set(0, 0, -20);
+    dish.rotation.y = Math.PI;
+    deathStar.add(dish);
+    
+    // Add the central laser point
+    const laserGeometry = new THREE.SphereGeometry(1.5, 16, 16);
+    const laserMaterial = new THREE.MeshBasicMaterial({
+    color: 0x66ff00
+    // Remove emissive properties
+});
+    const laser = new THREE.Mesh(laserGeometry, laserMaterial);
+    laser.position.set(0, 0, -34);
+    deathStar.add(laser);
+    
+    // Add some surface details - more visible now
+    for (let i = 0; i < 150; i++) { // Added more details
+        const size = 1 + Math.random() * 4; // Larger details
+        const detailGeometry = new THREE.BoxGeometry(size, size, size * 0.5);
+        const detailMaterial = new THREE.MeshStandardMaterial({
+            color: Math.random() > 0.7 ? 0x666666 : 0x333333, // Varied colors
+            roughness: 0.5,
+            metalness: 0.7
+        });
+        const detail = new THREE.Mesh(detailGeometry, detailMaterial);
         
-        // Check agent-obstacle collisions
-        for (const obstacle of obstacles) {
-          const distance = agentA.position.distanceTo(obstacle.position);
-          const collisionThreshold = agentA.radius + obstacle.size;
-          
-          if (distance < collisionThreshold) {
-            // Calculate reflection vector
-            const normal = new THREE.Vector3().subVectors(agentA.position, obstacle.position).normalize();
-            agentA.direction.reflect(normal);
-            
-            // Add some randomness to avoid getting stuck
-            agentA.direction.x += (Math.random() - 0.5) * 0.1;
-            agentA.direction.y += (Math.random() - 0.5) * 0.1;
-            agentA.direction.z += (Math.random() - 0.5) * 0.1;
-            agentA.direction.normalize().multiplyScalar(AGENT_SPEED);
-            
-            // Move away from obstacle
-            agentA.position.add(normal.multiplyScalar(collisionThreshold - distance + 0.1));
-            
-            // Create collision effect
-            const collisionPoint = new THREE.Vector3().addVectors(
-              agentA.position,
-              normal.clone().multiplyScalar(-agentA.radius)
+        // Position on surface of sphere
+        const phi = Math.acos(-1 + (2 * Math.random()));
+        const theta = 2 * Math.PI * Math.random();
+        
+        // Don't place details where the dish is
+        if (phi > Math.PI / 3) {
+            const radius = 30;
+            detail.position.set(
+                radius * Math.sin(phi) * Math.cos(theta),
+                radius * Math.sin(phi) * Math.sin(theta),
+                radius * Math.cos(phi)
             );
             
-            createCollisionEffect(collisionPoint, agentA.color, 30);
-            
-            // Increment collision counter
-            collisionCount++;
-            collisionCountEl.textContent = collisionCount;
-          }
+            // Orient to face outward
+            detail.lookAt(0, 0, 0);
+            deathStar.add(detail);
+        }
+    }
+    
+    // Position the Death Star closer to the camera but still not visible initially
+    deathStar.position.set(-2000, 200, -2000)
+    deathStar.visible = false; 
+	
+    // Add a spotlight to illuminate the Death Star
+    const spotlight = new THREE.SpotLight(0xffffff, 0); // Start with intensity 0
+    spotlight.position.set(-780, 230, -780);
+    spotlight.target = deathStar;
+    spotlight.angle = 0.6;
+    spotlight.penumbra = 0.5;
+    spotlight.distance = 200;
+    scene.add(spotlight);
+    
+    // Initialize Death Star to be transparent initially
+    deathStar.traverse(child => {
+        if (child.material) {
+            if (Array.isArray(child.material)) {
+                child.material.forEach(mat => {
+                    mat.transparent = true;
+                    mat.opacity = 0;
+                });
+            } else {
+                child.material.transparent = true;
+                child.opacity = 0;
+            }
+        }
+    });
+    
+    // Add Death Star to scene
+    scene.add(deathStar);
+    
+    // Store Death Star reference globally for later animation
+    window.deathStar = deathStar;
+    window.deathStarSpotlight = spotlight;
+    
+    // Start Death Star appearance sequence after a delay
+    setTimeout(startDeathStarSequence, 500);
+    
+    return deathStar;
+}
+
+// Function to start the Death Star sequence
+function startDeathStarSequence() {
+    let fadeProgress = 0;
+    
+    function fadeIn() {
+    if (fadeProgress < 1) {
+        fadeProgress += 0.05;
+        
+        // After a certain point, make it visible
+        if (fadeProgress > 0.05 && !window.deathStar.visible) {
+            window.deathStar.visible = true;
         }
         
-        // Check agent-agent collisions
-        for (let j = i + 1; j < agents.length; j++) {
-          const agentB = agents[j];
-          
-          const distance = agentA.position.distanceTo(agentB.position);
-          const collisionThreshold = agentA.radius + agentB.radius;
-          
-          if (distance < collisionThreshold) {
-            // Calculate collision response
-            const normal = new THREE.Vector3().subVectors(agentA.position, agentB.position).normalize();
+		// Play ominous appearance sound when Death Star becomes visible
+try {
+    const appearanceSound = new Audio('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptitle=Imperial+March&filename=mh/MjU2Njk1MjU2Njk1_JzthsfvUY24.mp3');
+    appearanceSound.volume = 0.7;
+    appearanceSound.play().catch(e => console.log("Couldn't play Death Star appearance sound:", e));
+    
+    // Add secondary mechanical sound with slight delay for more impact
+    setTimeout(() => {
+        const mechanicalSound = new Audio('https://soundbible.com/grab.php?id=1562&type=mp3'); // Mechanical/industrial sound
+        mechanicalSound.volume = 0.5;
+        mechanicalSound.play().catch(e => console.log("Couldn't play secondary sound:", e));
+    }, 1500);
+} catch (error) {
+    console.log("Error playing Death Star appearance sound:", error);
+}
+		
+        // Fade in the Death Star materials
+        window.deathStar.traverse(child => {
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => {
+                        mat.opacity = fadeProgress;
+                    });
+                } else {
+                    child.material.opacity = fadeProgress;
+                }
+            }
+        });
+        
+        // Also gradually increase spotlight intensity
+        window.deathStarSpotlight.intensity = fadeProgress;
+        
+        requestAnimationFrame(fadeIn);
+    } else {
+        // After fully visible, start moving towards the sun while rotating
+        moveDeathStarTowardsSun();
+    }
+}
+    
+    fadeIn();
+}
+
+// Function to move Death Star toward the sun while rotating
+function moveDeathStarTowardsSun() {
+    // Make sure we have a reference to the Death Star and sun
+    if (!window.deathStar || !sun) {
+        return;
+    }
+    
+    // Calculate direction to sun
+    const targetDirection = new THREE.Vector3();
+    targetDirection.subVectors(sun.position, window.deathStar.position).normalize();
+    
+    // Slower movement speed
+    const moveSpeed = 1.5; // Reduced from 0.3
+    
+    function moveAndRotate() {
+        // Ensure minimum gameplay time before Death Star can reach firing position
+        if (gameTime > 15) { // Don't allow firing until 50 seconds of game time has passed
+            // Just continue rotating but don't approach too close yet
+            window.deathStar.rotation.y += 0.005;
             
-            // Exchange velocities (simplified physics)
-            const tempDir = agentA.direction.clone();
-            agentA.direction.copy(agentB.direction).reflect(normal);
-            agentB.direction.copy(tempDir).reflect(normal.clone().negate());
             
-            // Move apart to avoid getting stuck
-            const correction = (collisionThreshold - distance + 0.1) * 0.5;
-            agentA.position.add(normal.clone().multiplyScalar(correction));
-            agentB.position.add(normal.clone().multiplyScalar(-correction));
+            const distanceToSun = window.deathStar.position.distanceTo(sun.position);
+            if (distanceToSun < 600) {
+                // Move away slightly if too close
+                window.deathStar.position.x -= targetDirection.x * moveSpeed;
+                window.deathStar.position.y -= targetDirection.y * moveSpeed;
+                window.deathStar.position.z -= targetDirection.z * moveSpeed;
+            } else {
+                // Approach very slowly
+                window.deathStar.position.x += targetDirection.x * (moveSpeed * 0.7);
+                window.deathStar.position.y += targetDirection.y * (moveSpeed * 0.7);
+                window.deathStar.position.z += targetDirection.z * (moveSpeed * 0.7);
+            }
             
-            // Create collision effect
-            const collisionPoint = new THREE.Vector3().lerpVectors(agentA.position, agentB.position, 0.5);
-            createCollisionEffect(collisionPoint, agentA.color, 30);
-            
-            // Increment collision counter
-            collisionCount++;
-            collisionCountEl.textContent = collisionCount;
-          }
+            requestAnimationFrame(moveAndRotate);
+            return;
         }
-      }
-    }
-    
-    function updateObstacles(delta) {
-      // Update each obstacle
-      for (const obstacle of obstacles) {
-        // Rotate obstacle
-        obstacle.mesh.rotation.x += obstacle.rotationSpeed.x;
-        obstacle.mesh.rotation.y += obstacle.rotationSpeed.y;
-        obstacle.mesh.rotation.z += obstacle.rotationSpeed.z;
-      }
-    }
-    
-    function updateParticles(delta) {
-      // Update each particle and remove dead ones
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const alive = particles[i].update(delta);
-        if (!alive) {
-          particles[i].remove();
-          particles.splice(i, 1);
+        
+        // Regular movement after minimum play time has passed
+        // Move toward sun
+        window.deathStar.position.x += targetDirection.x * moveSpeed;
+        window.deathStar.position.y += targetDirection.y * moveSpeed;
+        window.deathStar.position.z += targetDirection.z * moveSpeed;
+        
+        // Calculate current forward direction of Death Star (negative Z axis)
+        const forward = new THREE.Vector3(0, 0, -1);
+        forward.applyQuaternion(window.deathStar.quaternion);
+        
+        // Determine if we need to continue rotating
+        const dot = forward.dot(targetDirection);
+        
+        // Always rotate, but check if we're close enough to fire
+        const rotationSpeed = 0.03;
+        
+        // Create a quaternion for rotation
+        const rotationAxis = new THREE.Vector3();
+        rotationAxis.crossVectors(forward, targetDirection).normalize();
+        
+        // Apply rotation
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromAxisAngle(rotationAxis, rotationSpeed);
+        window.deathStar.quaternion.premultiply(quaternion);
+        
+        // Check if we're at the desired distance from the sun and facing it
+        const distanceToSun = window.deathStar.position.distanceTo(sun.position);
+        
+        if (distanceToSun < 600 && distanceToSun > 200 && dot > 0.5) {
+            // We're at the right distance and facing the sun, start firing
+            pulseBeforeFiring();
+        } else if (distanceToSun <= 350) {
+            // Too close, back up a bit
+            window.deathStar.position.x -= targetDirection.x * moveSpeed;
+            window.deathStar.position.y -= targetDirection.y * moveSpeed;
+            window.deathStar.position.z -= targetDirection.z * moveSpeed;
+            requestAnimationFrame(moveAndRotate);
+        } else {
+            // Continue moving and rotating
+            requestAnimationFrame(moveAndRotate);
         }
-      }
     }
     
-    function onWindowResize() {
-      // Update camera aspect ratio
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      
-      // Update renderer and composer sizes
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      composer.setSize(window.innerWidth, window.innerHeight);
-      
-      // Update FXAA shader uniforms
-      const fxaaPass = composer.passes[2];
-      fxaaPass.uniforms['resolution'].value.set(
-        1 / (window.innerWidth * renderer.getPixelRatio()),
-        1 / (window.innerHeight * renderer.getPixelRatio())
-      );
+    moveAndRotate();
+}
+
+// Function to pulse the laser before firing
+function pulseBeforeFiring() {
+    let pulseCount = 0;
+    const maxPulses = 5;
+    
+    // Find the laser point (third child in the Death Star group)
+    const laser = window.deathStar.children[2];
+    
+    function pulse() {
+        if (pulseCount < maxPulses) {
+            pulseCount++;
+            
+            // Make the laser point pulse
+            const pulseDuration = 400; // milliseconds
+            const pulseIntensity = 1.5;
+            
+            if (laser.material.emissiveIntensity !== undefined) {
+				laser.material.emissiveIntensity = pulseIntensity;
+			}
+            
+            setTimeout(() => {
+                laser.material.emissiveIntensity = 1.0;
+                
+                setTimeout(() => {
+                    pulse();
+                }, 600); // Delay between pulses
+            }, pulseDuration);
+        } else {
+            // Now start the firing sequence
+            startDeathStarFiring(window.deathStar);
+        }
     }
     
-    function animate() {
-      requestAnimationFrame(animate);
-      
-      // Get delta time for smooth animation
-      const delta = clock.getDelta();
-      
-      // Update controls
-      controls.update();
-      
-      // Update simulation
-      if (agents.length > 0) {
-        updateAgents(delta);
-        checkCollisions();
-      }
-      
-      updateObstacles(delta);
-      updateParticles(delta);
-      
-      // Render the scene
-      composer.render();
+    pulse();
+}
+
+// Function to make Death Star fire
+function startDeathStarFiring(deathStar) {
+    console.log("Death Star firing");
+    window.deathStarHasFired = true;
+    // First charge the laser
+    const laser = deathStar.children[2]; // Assuming laser is the third child of the deathStar group
+    
+    // Charge up the laser
+    let chargeSize = 1;
+    let maxSize = 4;
+    let chargingComplete = false;
+    
+    function chargeLaser() {
+        if (chargeSize < maxSize && !chargingComplete) {
+            chargeSize += 0.05;
+            laser.scale.set(chargeSize, chargeSize, chargeSize);
+            
+            // Also make it pulse
+            laser.material.emissiveIntensity = 1 + Math.sin(Date.now() * 0.01) * 0.5;
+            
+            requestAnimationFrame(chargeLaser);
+        } else {
+            chargingComplete = true;
+            fireLaser(deathStar, laser);
+        }
     }
-  </script>
+    
+    chargeLaser();
+}
+
+// Function to fire the Death Star's laser at the sun
+function fireLaser(deathStar, laserSource) {
+    console.log("Firing Death Star laser at sun");
+    // Calculate distance to sun
+    const distanceToSun = deathStar.position.distanceTo(sun.position);
+    
+    // Create the main laser beam pointed at the sun
+    const laserGeometry = new THREE.CylinderGeometry(5, 5, distanceToSun, 16);
+    const laserMaterial = new THREE.MeshBasicMaterial({
+        color: 0x66ff00,
+        transparent: true,
+        opacity: 0.7
+    });
+    
+    const laserBeam = new THREE.Mesh(laserGeometry, laserMaterial);
+    
+    // Position the laser beam to point from Death Star to sun
+    const midpoint = new THREE.Vector3().addVectors(
+        laserSource.getWorldPosition(new THREE.Vector3()),
+        sun.position
+    ).multiplyScalar(0.5);
+    
+    laserBeam.position.copy(midpoint);
+    
+    // Orient the laser to point at the sun
+    laserBeam.lookAt(sun.position);
+    laserBeam.rotateX(Math.PI / 2);
+    
+    scene.add(laserBeam);
+    
+    // Add a point light to the laser
+    const laserLight = new THREE.PointLight(0x66ff00, 3, 500);
+    laserLight.position.copy(laserSource.getWorldPosition(new THREE.Vector3()));
+    scene.add(laserLight);
+    
+   // Add dramatic laser firing sound
+try {
+    const laserSound = new Audio('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptitle=Blaster&filename=nj/NjQxNzg3NDIxNjQxNzg_aDVBVIIuLvg.mp3');
+
+    laserSound.volume = 0.6;
+    laserSound.play().catch(e => console.log("Couldn't play laser sound:", e));
+} catch (error) {
+    console.log("Error playing sound:", error);
+}
+    
+    // Animate the laser with increasing intensity
+    let laserIntensity = 0.7;
+    const maxIntensity = 1.0;
+    const intensifyRate = 0.01;
+    
+    function intensifyLaser() {
+        if (laserIntensity < maxIntensity) {
+            laserIntensity += intensifyRate;
+            laserBeam.material.opacity = laserIntensity;
+            laserLight.intensity = laserIntensity * 4;
+            
+            requestAnimationFrame(intensifyLaser);
+        } else {
+            // Once the laser reaches max intensity, start the sun destruction sequence
+            startSunDestructionSequence(laserBeam, laserLight);
+        }
+    }
+    
+    intensifyLaser();
+}
+function startSunDestructionSequence(laserBeam, laserLight) {
+    console.log("Starting sun destruction sequence");
+    
+    // Create a growing shockwave effect at the sun's position
+    const shockwaveGeometry = new THREE.SphereGeometry(10, 32, 32);
+    const shockwaveMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff3300,
+        transparent: true,
+        opacity: 0.7,
+        wireframe: true
+    });
+    
+    const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial);
+    shockwave.position.copy(sun.position);
+    scene.add(shockwave);
+    
+    // Create multiple pulse rings
+    const rings = [];
+    for (let i = 0; i < 3; i++) {
+        const ringGeometry = new THREE.RingGeometry(10, 11, 32);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff5500,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide
+        });
+        
+        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+        ring.rotation.x = Math.PI / 2;
+        ring.scale.set(0.1, 0.1, 0.1);
+        ring.position.copy(sun.position);
+        scene.add(ring);
+        
+        rings.push({
+            mesh: ring,
+            speed: 0.05 + (i * 0.02),
+            delay: i * 20
+        });
+    }
+    
+    // Add a bright flash light
+    const flashLight = new THREE.PointLight(0xffffff, 0, 2000);
+    flashLight.position.copy(sun.position);
+    scene.add(flashLight);
+    
+    // Sun destabilization variables
+    let sunScale = 1.0;
+    let sunIntensity = 1.0;
+    let shockwaveSize = 1.0;
+    let destructionTime = 0;
+    let stage = 0;
+    
+    // Try to play explosion sound
+    setTimeout(() => {
+    try {
+        // First play a deep rumble/charging sound
+        const chargeSound = new Audio('https://soundbible.com/grab.php?id=1900&type=mp3'); // Low rumble sound
+        chargeSound.volume = 0.5;
+        chargeSound.play().catch(e => console.log("Couldn't play charge sound:", e));
+        
+        // Then play a massive explosion sound with slight delay
+        setTimeout(() => {
+            const explosionSound = new Audio('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptitle=Death+Star+Explosion&filename=mj/MjcxNDg3MjcxNDg3_u3fZetvbvDo.mp3');
+            explosionSound.volume = 0.8;
+            explosionSound.play().catch(e => console.log("Couldn't play explosion sound:", e));
+            
+            // Add a secondary explosion sound for more depth
+            setTimeout(() => {
+                const secondaryExplosion = new Audio('https://soundbible.com/grab.php?id=1234&type=mp3'); // Secondary blast
+                secondaryExplosion.volume = 0.6;
+                secondaryExplosion.play().catch(e => console.log("Couldn't play secondary explosion:", e));
+            }, 700);
+        }, 1500);
+    } catch (error) {
+        console.log("Error playing sound:", error);
+    }
+}, 1000);
+    
+    // Destruction animation
+    function animateDestruction() {
+        destructionTime++;
+        
+        // Stage 0: Initial shockwaves and destabilization
+        if (stage === 0 && destructionTime < 100) {
+            // Destabilize sun - pulsate with increasing amplitude
+            const pulse = Math.sin(destructionTime * 0.1) * (0.1 + (destructionTime * 0.001));
+            sunScale = 1.0 + pulse;
+            sun.scale.set(sunScale, sunScale, sunScale);
+            
+            // Increase sun brightness
+            sunIntensity = 1.0 + (destructionTime * 0.01);
+            sun.children.forEach(child => {
+                if (child.material && child.material.emissiveIntensity) {
+                    child.material.emissiveIntensity = sunIntensity;
+                }
+            });
+            
+            // Grow shockwave
+            shockwaveSize += 0.03;
+            shockwave.scale.set(shockwaveSize, shockwaveSize, shockwaveSize);
+            shockwave.rotation.x += 0.01;
+            shockwave.rotation.y += 0.01;
+            
+            // Animate rings
+            rings.forEach((ring, index) => {
+                if (destructionTime > ring.delay) {
+                    ring.mesh.scale.x += ring.speed;
+                    ring.mesh.scale.y += ring.speed;
+                    ring.mesh.scale.z += ring.speed;
+                    ring.mesh.material.opacity = Math.max(0, 0.5 - ring.mesh.scale.x * 0.05);
+                }
+            });
+        }
+        // Stage 1: Sun reaches critical state
+        else if (stage === 0) {
+            stage = 1;
+            
+            // Flash effect
+            flashLight.intensity = 10;
+            
+            // Create distortion waves
+            const waveCount = 5;
+            for (let i = 0; i < waveCount; i++) {
+                setTimeout(() => {
+                    createDistortionWave(sun.position.clone(), 30 + (i * 10));
+                }, i * 300);
+            }
+            
+            // Prepare for final explosion
+            setTimeout(() => {
+                stage = 2;
+                
+                // Remove laser beam
+                scene.remove(laserBeam);
+                scene.remove(laserLight);
+                
+                // Final explosion flash
+                flashLight.intensity = 50;
+                setTimeout(() => {
+                    flashLight.intensity = 5;
+                }, 200);
+            }, 2000);
+        }
+        // Stage 2: Final explosion
+        else if (stage === 2) {
+            // Rapidly expand sun
+            sunScale *= 1.08;
+            sun.scale.set(sunScale, sunScale, sunScale);
+            
+            // Fade out sun as it expands
+            sun.traverse(child => {
+                if (child.material) {
+                    if (child.material.opacity !== undefined) {
+                        child.material.opacity = Math.max(0, child.material.opacity - 0.02);
+                    }
+                    if (child.material.emissiveIntensity !== undefined) {
+                        child.material.emissiveIntensity = Math.max(0, child.material.emissiveIntensity - 0.05);
+                    }
+                }
+            });
+            
+            // Shockwave fades out
+            shockwave.material.opacity = Math.max(0, shockwave.material.opacity - 0.02);
+            
+            // If sun is big enough, trigger the game over
+            if (sunScale > 30) {
+                // Final white flash
+                flashLight.intensity = 100;
+                flashLight.color.set(0xffffff);
+                
+                // Game over with slight delay
+                setTimeout(() => {
+                    endGameWithSunDestruction();
+                }, 1500);
+                
+				// Add final dramatic sound as everything goes white
+				try {
+					const finalSound = new Audio('https://soundbible.com/grab.php?id=1792&type=mp3'); // Massive impact sound
+					finalSound.volume = 0.9;
+					finalSound.play().catch(e => console.log("Couldn't play final sound:", e));
+				} catch (error) {
+					console.log("Error playing sound:", error);
+				}
+				
+				
+                // Stop animation
+				
+                return;
+            }
+        }
+        
+        // Continue animation
+        requestAnimationFrame(animateDestruction);
+    }
+    
+    animateDestruction();
+}
+
+// Create expanding distortion wave
+function createDistortionWave(position, size) {
+    const waveGeometry = new THREE.SphereGeometry(size, 32, 32);
+    const waveMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffaa,
+        transparent: true,
+        opacity: 0.3,
+        wireframe: true
+    });
+    
+    const wave = new THREE.Mesh(waveGeometry, waveMaterial);
+    wave.position.copy(position);
+    scene.add(wave);
+    
+    // Animation variables
+    let waveScale = 0.1;
+    let waveOpacity = 0.3;
+    const expandSpeed = 0.04;
+    
+    function expandWave() {
+        waveScale += expandSpeed;
+        waveOpacity = Math.max(0, waveOpacity - 0.01);
+        
+        wave.scale.set(waveScale, waveScale, waveScale);
+        waveMaterial.opacity = waveOpacity;
+        
+        if (waveOpacity <= 0) {
+            scene.remove(wave);
+            return;
+        }
+        
+        requestAnimationFrame(expandWave);
+    }
+    
+    expandWave();
+}
+
+// Game over screen after sun destruction
+function endGameWithSunDestruction() {
+    gameActive = false;
+    
+    // Create dramatic ending screen
+    const gameOverDiv = document.createElement('div');
+    gameOverDiv.style.position = 'absolute';
+    gameOverDiv.style.top = '0';
+    gameOverDiv.style.left = '0';
+    gameOverDiv.style.width = '100%';
+    gameOverDiv.style.height = '100%';
+    gameOverDiv.style.display = 'flex';
+    gameOverDiv.style.flexDirection = 'column';
+    gameOverDiv.style.justifyContent = 'center';
+    gameOverDiv.style.alignItems = 'center';
+    gameOverDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+    gameOverDiv.style.color = 'white';
+    gameOverDiv.style.zIndex = '1000';
+    gameOverDiv.style.opacity = '0';
+    gameOverDiv.style.transition = 'opacity 2s ease-in';
+    
+    // Add final message and score
+    const finalScore = score + (aliensDestroyed * 50);
+    
+    // Create header with dramatic text
+    const header = document.createElement('h1');
+    header.textContent = 'THE SUN HAS BEEN DESTROYED';
+    header.style.color = '#ff3300';
+    header.style.fontSize = '3em';
+    header.style.textAlign = 'center';
+    header.style.margin = '0 0 20px 0';
+    header.style.textShadow = '0 0 10px #ff6600';
+    gameOverDiv.appendChild(header);
+    
+    // Create image of explosion
+    const explosionImage = document.createElement('div');
+    explosionImage.style.width = '200px';
+    explosionImage.style.height = '200px';
+    explosionImage.style.borderRadius = '50%';
+    explosionImage.style.background = 'radial-gradient(circle, #ffff00, #ff6600, #ff3300, #330000)';
+    explosionImage.style.boxShadow = '0 0 50px #ff6600, 0 0 100px #ff3300';
+    explosionImage.style.margin = '20px 0';
+    gameOverDiv.appendChild(explosionImage);
+    
+    // Create dramatic text
+    const message = document.createElement('p');
+    message.innerHTML = 'The Death Star has obliterated the heart of our solar system.<br>All life in the system is doomed.';
+    message.style.fontSize = '1.5em';
+    message.style.textAlign = 'center';
+    message.style.margin = '20px 0';
+    message.style.maxWidth = '80%';
+    message.style.lineHeight = '1.5';
+    gameOverDiv.appendChild(message);
+    
+    // Create score display
+    const scoreDisplay = document.createElement('p');
+    scoreDisplay.innerHTML = `<strong>Your final score:</strong> ${finalScore}<br><strong>Aliens destroyed:</strong> ${aliensDestroyed}`;
+    scoreDisplay.style.fontSize = '1.2em';
+    scoreDisplay.style.margin = '20px 0';
+    gameOverDiv.appendChild(scoreDisplay);
+    
+    // Create restart button
+    const restartButton = document.createElement('button');
+    restartButton.textContent = 'TRY AGAIN';
+    restartButton.style.backgroundColor = '#ff3300';
+    restartButton.style.color = 'white';
+    restartButton.style.border = 'none';
+    restartButton.style.padding = '15px 30px';
+    restartButton.style.fontSize = '1.2em';
+    restartButton.style.margin = '30px 0';
+    restartButton.style.cursor = 'pointer';
+    restartButton.style.borderRadius = '5px';
+    restartButton.style.boxShadow = '0 0 10px #ff6600';
+    restartButton.style.transition = 'all 0.3s ease';
+    
+    restartButton.addEventListener('mouseenter', () => {
+        restartButton.style.backgroundColor = '#ff6600';
+        restartButton.style.transform = 'scale(1.05)';
+    });
+    
+    restartButton.addEventListener('mouseleave', () => {
+        restartButton.style.backgroundColor = '#ff3300';
+        restartButton.style.transform = 'scale(1)';
+    });
+    
+    restartButton.addEventListener('click', () => {
+        location.reload();
+    });
+    
+    gameOverDiv.appendChild(restartButton);
+    
+    // Add dramatic quote
+    const quote = document.createElement('p');
+    quote.textContent = "\"That's no moon. It's a space station.\" — Obi-Wan Kenobi";
+    quote.style.fontStyle = 'italic';
+    quote.style.marginTop = '40px';
+    quote.style.opacity = '0.7';
+    gameOverDiv.appendChild(quote);
+    
+    // Add to body with fade in
+    document.body.appendChild(gameOverDiv);
+    setTimeout(() => {
+        gameOverDiv.style.opacity = '1';
+    }, 100);
+}
+// Create a pool of reusable aliens at the start
+function initAlienPool() {
+    for (let i = 0; i < POOL_SIZE; i++) {
+        const alien = createAlienModel();
+        alien.visible = false;
+        scene.add(alien);
+        alienPool.push(alien);
+    }
+}
+function checkLaserHits(laser) {
+    // Set up a raycaster from the laser position in the laser direction
+    const laserRaycaster = new THREE.Raycaster();
+    laserRaycaster.set(laser.position, laser.userData.direction);
+    
+    // Get all parts of all aliens for detailed hit detection
+    let alienParts = [];
+    aliens.forEach(alien => {
+        if (alien.visible) { // Only check visible aliens
+            alien.traverse(child => {
+                if (child.isMesh) {
+                    // Store reference to the parent alien with each part
+                    child.userData.parentAlien = alien;
+                    alienParts.push(child);
+                }
+            });
+        }
+    });
+    
+    // Check for intersections with alien parts
+    const alienIntersects = laserRaycaster.intersectObjects(alienParts);
+    
+    if (alienIntersects.length > 0) {
+        // Get the first intersected alien part
+        const hitPart = alienIntersects[0].object;
+        const hitAlien = hitPart.userData.parentAlien;
+        const hitDistance = alienIntersects[0].distance;
+        
+        // Calculate damage based on distance (closer = more damage)
+        const damage = Math.max(10, 50 - hitDistance/5);
+        
+        // Apply damage to alien health
+        hitAlien.userData.health -= damage;
+        
+        // Visual effect for hit with explosion particles
+        createHitEffect(alienIntersects[0].point);
+        
+        // Visual effect for hit - make the whole alien flash red
+        hitAlien.traverse(child => {
+    if (child.material && child.material.emissive) {
+        // Store original emissive if it exists
+        const originalEmissive = child.material.emissive.clone();
+        child.material.emissive.set(0xff0000);
+        
+        setTimeout(() => {
+            child.material.emissive.copy(originalEmissive);
+        }, 100);
+    } else if (child.material) {
+        // If no emissive, just change the color temporarily
+        const originalColor = child.material.color.clone();
+        child.material.color.set(0xff0000);
+        
+        setTimeout(() => {
+            child.material.color.copy(originalColor);
+        }, 100);
+    }
+});
+        
+        // Remove the laser on hit
+        scene.remove(laser);
+        lasers = lasers.filter(l => l !== laser);
+        return;
+    }
+    
+    // If no alien was hit, check for planet hits
+    const planetIntersects = laserRaycaster.intersectObjects(planets);
+    
+    if (planetIntersects.length > 0) {
+        // Get the first intersected planet
+        const hitPlanet = planetIntersects[0].object;
+        
+        // We're defenders, so hitting planets is a mistake!
+        // Apply a small penalty for friendly fire
+        score = Math.max(0, score - 5);
+        document.getElementById('score-display').textContent = score;
+        
+        // Visual effect for hit
+        if (hitPlanet.material && hitPlanet.material.emissive) {
+            hitPlanet.material.emissive = new THREE.Color(0xff0000);
+            hitPlanet.material.emissiveIntensity = 1;
+            
+            // Reset emissive after short delay
+            setTimeout(() => {
+                hitPlanet.material.emissive = new THREE.Color(0x000000);
+                hitPlanet.material.emissiveIntensity = 0;
+            }, 100);
+        }
+        
+        // Create hit effect at impact point
+        createHitEffect(planetIntersects[0].point);
+        
+        // Remove the laser on hit
+        scene.remove(laser);
+        lasers = lasers.filter(l => l !== laser);
+    }
+}
+// Create just the alien model without positioning or targeting
+function createAlienModel() {
+    // Create alien spaceship geometry
+    const alienBody = new THREE.Group();
+    
+    // Main saucer body with simplified geometry
+    const bodyGeometry = new THREE.SphereGeometry(2, 16, 16); // Reduced segments
+    bodyGeometry.scale(1, 0.3, 1);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x22ccaa,
+        metalness: 0.8,
+        roughness: 0.2,
+        emissive: 0x119977,
+        emissiveIntensity: 0.4
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    alienBody.add(body);
+    
+    // Top dome with simplified geometry
+    const domeGeometry = new THREE.SphereGeometry(1.2, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2); // Reduced segments
+    const domeMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x88ffee, 
+        transparent: true, 
+        opacity: 0.7,
+        metalness: 0.8,
+        roughness: 0.2
+    });
+    const dome = new THREE.Mesh(domeGeometry, domeMaterial);
+    dome.position.y = 0.6;
+    alienBody.add(dome);
+    
+    // Rim with simplified geometry
+    const rimGeometry = new THREE.TorusGeometry(2.1, 0.2, 8, 24); // Reduced segments
+    const rimMaterial = new THREE.MeshStandardMaterial({
+        color: 0x33ddbb,
+        metalness: 0.7,
+        roughness: 0.3
+    });
+    const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0;
+    alienBody.add(rim);
+    
+    // Bottom lights - reduced to 6 from 8
+    for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2;
+        
+        // Simple light sphere instead of complex beam
+        const lightGeometry = new THREE.SphereGeometry(0.3, 8, 8); // Simplified
+        const lightMaterial = new THREE.MeshBasicMaterial({ 
+    color: 0xffff44
+    // Remove emissive property
+});
+        const light = new THREE.Mesh(lightGeometry, lightMaterial);
+        light.position.set(
+            Math.cos(angle) * 1.8,
+            -0.5,
+            Math.sin(angle) * 1.8
+        );
+        alienBody.add(light);
+    }
+    
+    // Store initial data
+    alienBody.userData = {
+        isActive: false,
+        health: 30,
+        attackTimer: 0,
+        pulseTime: 0
+    };
+    
+    return alienBody;
+}
+
+// Function to get an alien from the pool and activate it
+function getAlienFromPool() {
+    // Find an inactive alien in the pool
+    for (let i = 0; i < alienPool.length; i++) {
+        if (!alienPool[i].userData.isActive) {
+            return activateAlien(alienPool[i]);
+        }
+    }
+    
+    // If no aliens available in pool, create a new one
+    const newAlien = createAlienModel();
+    scene.add(newAlien);
+    alienPool.push(newAlien);
+    return activateAlien(newAlien);
+}
+
+// Activate an alien with position and targeting
+function activateAlien(alien) {
+    // Reset properties
+    alien.visible = true;
+    alien.userData.isActive = true;
+    alien.userData.health = 30;
+    alien.userData.attackTimer = 0;
+    alien.userData.pulseTime = 0;
+    
+    // Position alien
+    const distance = 250;
+    const angle = Math.random() * Math.PI * 2;
+    const height = (Math.random() - 0.5) * 100;
+    
+    alien.position.set(
+        Math.cos(angle) * distance,
+        height,
+        Math.sin(angle) * distance
+    );
+    
+    // Target a planet or sun
+    const targets = [...planets, sun];
+    const targetIndex = Math.floor(Math.random() * targets.length);
+    const target = targets[targetIndex];
+    
+    // Calculate direction to target
+    const direction = new THREE.Vector3();
+    direction.subVectors(target.position, alien.position).normalize();
+    
+    // Store targeting data
+    alien.userData.velocity = direction.multiplyScalar(0.5);
+    alien.userData.target = target;
+    
+    // Add to active aliens array
+    aliens.push(alien);
+    
+    return alien;
+}
+
+
+// Create a laser beam
+function shootLaser() {
+    // Get camera position and direction
+    const cameraPosition = camera.position.clone();
+    raycaster.setFromCamera(mouse, camera);
+    const direction = raycaster.ray.direction.clone().normalize();
+    
+    // Create a thinner laser beam for more precise aiming
+    const laserGeometry = new THREE.CylinderGeometry(0.05, 0.05, 100, 8);
+    laserGeometry.rotateX(Math.PI / 2); // Rotate to point forward
+    
+    // Create brighter glowing laser material
+    const laserMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0.9
+    // Remove emissive properties as they don't work with MeshBasicMaterial
+});
+    
+    // Create the laser mesh
+    const laser = new THREE.Mesh(laserGeometry, laserMaterial);
+    
+    // Position laser just in front of the camera
+    laser.position.copy(cameraPosition);
+    laser.position.add(direction.clone().multiplyScalar(1)); // Start 1 unit in front of camera
+    
+    // Set the direction of the laser
+    const quaternion = new THREE.Quaternion();
+    quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+    laser.quaternion.copy(quaternion);
+    
+    // Add a point light to the laser for glow effect
+    const laserLight = new THREE.PointLight(0xff0000, 1, 5);
+    laser.add(laserLight);
+    
+    // Store laser data with faster velocity
+    laser.userData = {
+        velocity: direction.clone().multiplyScalar(5), // Faster laser speed
+        timeToLive: 60,
+        direction: direction
+    };
+    
+    // Add to scene and lasers array
+    scene.add(laser);
+    lasers.push(laser);
+    
+    // Add muzzle flash effect
+    createMuzzleFlash(cameraPosition, direction);
+    
+    // Check for immediate hit
+    checkLaserHits(laser);
+}
+
+function createMuzzleFlash(position, direction) {
+    // Create flash geometry
+    const flashGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+    const flashMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff5500,
+        transparent: true,
+        opacity: 1
+    });
+    
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    
+    // Position flash at camera but slightly forward
+    flash.position.copy(position);
+    flash.position.add(direction.clone().multiplyScalar(1.5));
+    
+    // Add light for glow effect
+    const flashLight = new THREE.PointLight(0xff5500, 2, 5);
+    flash.add(flashLight);
+    
+    scene.add(flash);
+    
+    // Animate flash fade-out
+    let opacity = 1;
+    let size = 0.3;
+    
+    function animateFlash() {
+        opacity -= 0.1;
+        size += 0.05;
+        
+        if (opacity <= 0) {
+            scene.remove(flash);
+            return;
+        }
+        
+        flash.material.opacity = opacity;
+        flash.scale.set(size, size, size);
+        
+        requestAnimationFrame(animateFlash);
+    }
+    
+    animateFlash();
+}
+
+// Create explosion effect
+        
+       // Start spawning aliens at regular intervals
+function startAlienInvasion() {
+    // Initialize the alien pool
+    initAlienPool();
+    
+    const spawnAlien = () => {
+        if (gameActive) {
+            createAlien();
+            setTimeout(spawnAlien, alienSpawnRate);
+            
+            // Increase difficulty - spawn faster as game progresses
+            alienSpawnRate = Math.max(500, alienSpawnRate - 100);
+        }
+    };
+    
+    // Start spawning after initial delay
+    setTimeout(spawnAlien, 2000);
+}
+// Start the game timer countdown
+function startGameTimer() {
+    const countdown = () => {
+        if (gameTime > 0 && gameActive) {
+            gameTime--;
+            document.getElementById('time-display').textContent = gameTime;
+            setTimeout(countdown, 1000);
+        } else if (gameTime <= 0) {
+            // Check if Death Star has already fired
+            if (window.deathStarHasFired) {
+                // Game already ending with sun destruction
+                return;
+            } else {
+                endGame();
+            }
+        }
+    };
+    
+    countdown();
+}
+
+// End the game and show final score
+function endGame() {
+    gameActive = false;
+    
+    // Create game over screen
+    const gameOverDiv = document.createElement('div');
+    gameOverDiv.style.position = 'absolute';
+    gameOverDiv.style.top = '50%';
+    gameOverDiv.style.left = '50%';
+    gameOverDiv.style.transform = 'translate(-50%, -50%)';
+    gameOverDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    gameOverDiv.style.color = 'white';
+    gameOverDiv.style.padding = '30px';
+    gameOverDiv.style.borderRadius = '10px';
+    gameOverDiv.style.textAlign = 'center';
+    gameOverDiv.style.zIndex = '1000';
+    
+    const finalScore = score + (aliensDestroyed * 50);
+    
+    gameOverDiv.innerHTML = `
+        <h1>Game Over!</h1>
+        <p>You defended the solar system for 60 seconds!</p>
+        <p>Aliens Destroyed: ${aliensDestroyed}</p>
+        <p>Final Score: ${finalScore}</p>
+        <button id="restart-button" style="padding: 10px 20px; margin-top: 20px; cursor: pointer; background: #4488ff; border: none; color: white; border-radius: 5px;">Play Again</button>
+    `;
+    
+    document.body.appendChild(gameOverDiv);
+    
+    // Add restart functionality
+    document.getElementById('restart-button').addEventListener('click', () => {
+        location.reload();
+    });
+}
+
+// Update camera position based on user input
+function updateCamera() {
+    // Rotate camera based on mouse movement (with damping)
+    camera.rotation.y += (-mouseMoveX * 0.01 - camera.rotation.y) * 0.05;
+    camera.rotation.x += (-mouseMoveY * 0.01 - camera.rotation.x) * 0.05;
+    
+    // Clamp vertical rotation to prevent flipping
+    camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+    
+    // Get camera direction
+    direction.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+    
+    // Handle keyboard input
+    if (keyboard[87] || keyboard[38]) { // W or Up Arrow
+        velocity.add(direction.clone().multiplyScalar(moveSpeed));
+    }
+    if (keyboard[83] || keyboard[40]) { // S or Down Arrow
+        velocity.add(direction.clone().multiplyScalar(-moveSpeed));
+    }
+    if (keyboard[65] || keyboard[37]) { // A or Left Arrow
+        const leftDir = new THREE.Vector3(direction.z, 0, -direction.x).normalize();
+        velocity.add(leftDir.multiplyScalar(moveSpeed));
+    }
+    if (keyboard[68] || keyboard[39]) { // D or Right Arrow
+        const rightDir = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
+        velocity.add(rightDir.multiplyScalar(moveSpeed));
+    }
+    if (keyboard[32] && boostAvailable) { // Space for boost
+        velocity.add(direction.clone().multiplyScalar(moveSpeed * 10));
+        boostAvailable = false;
+        boostCooldown = 60; // frames until boost is available again
+    }
+    
+    // Update boost cooldown
+    if (!boostAvailable) {
+        boostCooldown--;
+        if (boostCooldown <= 0) {
+            boostAvailable = true;
+        }
+    }
+    
+    // Apply dampening
+    velocity.multiplyScalar(0.95);
+    
+    // Update camera position
+    camera.position.add(velocity);
+}
+
+// Update planet positions in their orbits
+function updatePlanets() {
+    planets.forEach((planet) => {
+        // Update orbit position
+        planet.userData.orbitAngle += planet.userData.orbitSpeed;
+        planet.position.x = Math.cos(planet.userData.orbitAngle) * planet.userData.distance;
+        planet.position.z = Math.sin(planet.userData.orbitAngle) * planet.userData.distance;
+        
+        // Update planet rotation
+        planet.rotation.y += planet.userData.rotationSpeed;
+    });
+}
+
+// Update alien positions and behaviors
+function updateAliens() {
+    // Update all aliens
+    for (let i = aliens.length - 1; i >= 0; i--) {
+        const alien = aliens[i];
+        
+        // Update pulsing effect
+        alien.userData.pulseTime += 0.016; // Approximate time for 60fps
+        const pulse = (Math.sin(alien.userData.pulseTime * 5) + 1) / 2;
+        
+        // Apply simple hover effect
+        alien.position.y += Math.sin(alien.userData.pulseTime * 2) * 0.01;
+        
+        // Original movement code
+        // Move alien toward its target
+        alien.position.add(alien.userData.velocity);
+        
+        // Make the alien look at its target
+        alien.lookAt(alien.userData.target.position);
+        
+        // Check if alien has reached a planet or the sun
+        const distanceToTarget = alien.position.distanceTo(alien.userData.target.position);
+        
+        if (distanceToTarget < 10) {
+            // Alien attacks planet/sun
+            alien.userData.attackTimer++;
+            
+            if (alien.userData.attackTimer >= 60) {
+                // Apply damage to planet/sun
+                if (alien.userData.target === sun) {
+                    // If sun is hit, big score penalty
+                    score = Math.max(0, score - 100);
+                } else {
+                    // If planet is hit, damage it
+                    const planetName = alien.userData.target.userData.name;
+                    planetHealth[planetName] -= 10;
+                    
+                    // Check if planet destroyed
+                    if (planetHealth[planetName] <= 0) {
+                        // Create explosion
+                        createImprovedExplosion(
+                            alien.userData.target.position, 
+                            alien.userData.target.geometry.parameters.radius
+                        );
+                        
+                        // Remove planet
+                        scene.remove(alien.userData.target);
+                        planets = planets.filter(p => p !== alien.userData.target);
+                        
+                        // Score penalty for losing planet
+                        score = Math.max(0, score - 50);
+                    }
+                }
+                
+                // Reset attack timer
+                alien.userData.attackTimer = 0;
+                
+                // Update score display
+                document.getElementById('score-display').textContent = score;
+            }
+        }
+        
+        // Rotate alien for effect
+        alien.rotation.y += 0.01;
+        
+        // Check if alien destroyed
+        if (alien.userData.health <= 0) {
+            // Create improved explosion
+            createImprovedExplosion(alien.position, 3);
+            
+            // Deactivate instead of removing
+            alien.visible = false;
+            alien.userData.isActive = false;
+            aliens.splice(i, 1);
+            
+            // Award points
+            score += 20;
+            aliensDestroyed++;
+            
+            // Update displays
+            document.getElementById('score-display').textContent = score;
+            document.getElementById('aliens-destroyed').textContent = aliensDestroyed;
+        }
+    }
+}
+
+// Update laser positions and check for hits
+function updateLasers() {
+    for (let i = lasers.length - 1; i >= 0; i--) {
+        const laser = lasers[i];
+        
+        // Move laser forward
+        laser.position.add(laser.userData.velocity);
+        
+        // Check for hits with planets
+        checkLaserHits(laser);
+        
+        // Decrease time to live
+        laser.userData.timeToLive--;
+        
+        // Remove if expired
+        if (laser.userData.timeToLive <= 0) {
+            scene.remove(laser);
+            lasers.splice(i, 1);
+        }
+    }
+}
+
+
+// Find the closest planet to the camera
+function findClosestPlanet() {
+    // Reset closest planet
+    closestPlanet = null;
+    
+    // Update the raycaster
+    raycaster.setFromCamera(mouse, camera);
+    
+    // Find intersections
+    const intersects = raycaster.intersectObjects(planets);
+    
+    if (intersects.length > 0) {
+        // Get the first intersected planet
+        const intersectedPlanet = intersects[0].object;
+        return intersectedPlanet;
+    }
+    
+    // If no direct intersection, find closest planet by distance
+    let minDistance = Infinity;
+    let closest = null;
+    
+    planets.forEach(planet => {
+        const distance = camera.position.distanceTo(planet.position);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closest = planet;
+        }
+    });
+    
+    // Only show planet info if we're reasonably close
+    if (minDistance < 50) {
+        return closest;
+    }
+    
+    return null;
+}
+
+function createHitEffect(position) {
+    // Create particles for hit effect
+    const particleCount = 15;
+    const particleGeometry = new THREE.BufferGeometry();
+    const particleMaterial = new THREE.PointsMaterial({
+        color: 0xff5500,
+        size: 0.2,
+        transparent: true,
+        opacity: 1
+    });
+    
+    const particlePositions = [];
+    const particleVelocities = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        // All particles start at hit position
+        particlePositions.push(position.x, position.y, position.z);
+        
+        // Random velocity for particles
+        const velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.3,
+            (Math.random() - 0.5) * 0.3,
+            (Math.random() - 0.5) * 0.3
+        );
+        particleVelocities.push(velocity);
+    }
+    
+    particleGeometry.setAttribute('position', new THREE.Float32BufferAttribute(particlePositions, 3));
+    
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    particles.userData = {
+        velocities: particleVelocities,
+        timeToLive: 20
+    };
+    
+    // Add a point light at hit location
+    const hitLight = new THREE.PointLight(0xff5500, 1, 5);
+    hitLight.position.copy(position);
+    scene.add(hitLight);
+    
+    // Fade out the light
+    let lightIntensity = 1;
+    function fadeLight() {
+        lightIntensity -= 0.1;
+        if (lightIntensity <= 0) {
+            scene.remove(hitLight);
+            return;
+        }
+        hitLight.intensity = lightIntensity;
+        requestAnimationFrame(fadeLight);
+    }
+    fadeLight();
+    
+    scene.add(particles);
+    
+    // Animate particles
+    function updateHitParticles() {
+        const positions = particles.geometry.attributes.position.array;
+        const velocities = particles.userData.velocities;
+        
+        // Update particle positions
+        for (let i = 0; i < velocities.length; i++) {
+            positions[i*3] += velocities[i].x;
+            positions[i*3+1] += velocities[i].y;
+            positions[i*3+2] += velocities[i].z;
+            
+            // Add some gravity effect
+            velocities[i].y -= 0.01;
+        }
+        
+        particles.geometry.attributes.position.needsUpdate = true;
+        
+        // Decrease time to live and opacity
+        particles.userData.timeToLive--;
+        particles.material.opacity = particles.userData.timeToLive / 20;
+        
+        // Remove if expired
+        if (particles.userData.timeToLive <= 0) {
+            scene.remove(particles);
+        } else {
+            // Otherwise continue updating
+            requestAnimationFrame(updateHitParticles);
+        }
+    }
+    
+    updateHitParticles();
+}
+
+function createImprovedExplosion(position, size) {
+    // Create multiple layers of explosion particles
+    
+    // 1. Core explosion - bright orange
+    createExplosionLayer(position, size, 0xff6600, 1.0, size * 15, 0.8, 40);
+    
+    // 2. Outer explosion - yellow
+    createExplosionLayer(position, size * 1.2, 0xffcc00, 0.8, size * 12, 1.2, 45);
+    
+    // 3. Smoke layer - gray
+    createExplosionLayer(position, size * 1.5, 0x666666, 0.5, size * 8, 1.5, 60);
+    
+    // Add explosion light
+    const explosionLight = new THREE.PointLight(0xff6600, 2, size * 10);
+    explosionLight.position.copy(position);
+    scene.add(explosionLight);
+    
+    // Fade out the light
+    let lightIntensity = 2;
+    function fadeExplosionLight() {
+        lightIntensity -= 0.1;
+        if (lightIntensity <= 0) {
+            scene.remove(explosionLight);
+            return;
+        }
+        explosionLight.intensity = lightIntensity;
+        requestAnimationFrame(fadeExplosionLight);
+    }
+    fadeExplosionLight();
+}
+function createExplosionLayer(position, size, color, opacity, particleCount, speed, duration) {
+    const particleGeometry = new THREE.BufferGeometry();
+    const particleMaterial = new THREE.PointsMaterial({
+        color: color,
+        size: 0.3,
+        transparent: true,
+        opacity: opacity
+    });
+    
+    const particlePositions = [];
+    const particleVelocities = [];
+    
+    for (let i = 0; i < particleCount; i++) {
+        // Random position near center
+        const offset = size * 0.2;
+        const x = position.x + (Math.random() - 0.5) * offset;
+        const y = position.y + (Math.random() - 0.5) * offset;
+        const z = position.z + (Math.random() - 0.5) * offset;
+        
+        particlePositions.push(x, y, z);
+        
+        // Calculate direction from center
+        const direction = new THREE.Vector3(x - position.x, y - position.y, z - position.z).normalize();
+        
+        // Random speed outward
+        const velocity = direction.multiplyScalar(Math.random() * speed);
+        particleVelocities.push(velocity);
+    }
+    
+    particleGeometry.setAttribute('position', new THREE.Float32BufferAttribute(particlePositions, 3));
+    
+    const particles = new THREE.Points(particleGeometry, particleMaterial);
+    particles.userData = {
+        velocities: particleVelocities,
+        timeToLive: duration,
+        originalOpacity: opacity
+    };
+    
+    scene.add(particles);
+	
+	function updateExplosionLayer() {
+    const positions = particles.geometry.attributes.position.array;
+    const velocities = particles.userData.velocities;
+    
+    // Update particle positions
+    for (let i = 0; i < velocities.length; i++) {
+        positions[i*3] += velocities[i].x;
+        positions[i*3+1] += velocities[i].y;
+        positions[i*3+2] += velocities[i].z;
+        
+        // Slow down particles over time
+        velocities[i].x *= 0.98;
+        velocities[i].y *= 0.98;
+        velocities[i].z *= 0.98;
+    }
+    
+    particles.geometry.attributes.position.needsUpdate = true;
+    
+    // Decrease time to live and opacity
+    particles.userData.timeToLive--;
+    particles.material.opacity = (particles.userData.timeToLive / duration) * particles.userData.originalOpacity;
+    
+    // Remove if expired
+    if (particles.userData.timeToLive <= 0) {
+        scene.remove(particles);
+    } else {
+        // Otherwise continue updating
+        requestAnimationFrame(updateExplosionLayer);
+    }
+}
+
+// Call the function to start the animation
+updateExplosionLayer();
+}
+	
+
+
+
+
+// Update planet information display
+function updatePlanetInfo() {
+    // Find the closest planet
+    const planet = findClosestPlanet();
+    
+    // Update UI based on closest planet
+    if (planet) {
+        document.getElementById('current-planet').textContent = `Current Planet: ${planet.userData.name}`;
+        document.getElementById('planet-details').textContent = planet.userData.details;
+    } else {
+        document.getElementById('current-planet').textContent = "Current Planet: None";
+        document.getElementById('planet-details').textContent = "";
+    }
+}
+
+// Update explosion particles
+function updateExplosions(explosion) {
+    const positions = explosion.geometry.attributes.position.array;
+    const velocities = explosion.userData.velocities;
+    
+    // Update particle positions
+    for (let i = 0; i < velocities.length; i++) {
+        positions[i*3] += velocities[i].x;
+        positions[i*3+1] += velocities[i].y;
+        positions[i*3+2] += velocities[i].z;
+    }
+    
+    explosion.geometry.attributes.position.needsUpdate = true;
+    
+    // Decrease time to live
+    explosion.userData.timeToLive--;
+    
+    // Remove if expired
+    if (explosion.userData.timeToLive <= 0) {
+        scene.remove(explosion);
+    } else {
+        // Otherwise continue updating
+        requestAnimationFrame(() => updateExplosions(explosion));
+    }
+}
+
+// Main animation loop
+function animate() {
+    if (gameActive) {
+        requestAnimationFrame(animate);
+        
+        // Update camera position based on controls
+        updateCamera();
+        
+        // Update planets
+        updatePlanets();
+        
+        // Update lasers
+        updateLasers();
+        
+        // Update aliens
+        updateAliens();
+        
+        // Update planet info
+        updatePlanetInfo();
+        
+        // Render the scene
+        renderer.render(scene, camera);
+    }
+}
+        // Make sure to keep the initialization at the end
+        window.onload = function() {
+  addOpeningCrawl();
+};
+    </script>
 </body>
 </html>

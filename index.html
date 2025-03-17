@@ -1020,7 +1020,7 @@ try {
     
     // Add secondary mechanical sound with slight delay for more impact
     setTimeout(() => {
-        const mechanicalSound = new Audio('https://soundbible.com/grab.php?id=1562&type=mp3'); // Mechanical/industrial sound
+        const mechanicalSound = new Audio('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptitle=Vader+Breathing&filename=mj/MTg4NzUxODg3NQ_p4V7PtztLOA.mp3');
         mechanicalSound.volume = 0.5;
         mechanicalSound.play().catch(e => console.log("Couldn't play secondary sound:", e));
     }, 1500);
@@ -1068,74 +1068,83 @@ function moveDeathStarTowardsSun() {
     // Slower movement speed
     const moveSpeed = 1.5; // Reduced from 0.3
     
-    function moveAndRotate() {
-        // Ensure minimum gameplay time before Death Star can reach firing position
-        if (gameTime > 15) { // Don't allow firing until 50 seconds of game time has passed
-            // Just continue rotating but don't approach too close yet
-            window.deathStar.rotation.y += 0.005;
-            
-            
-            const distanceToSun = window.deathStar.position.distanceTo(sun.position);
-            if (distanceToSun < 600) {
-                // Move away slightly if too close
-                window.deathStar.position.x -= targetDirection.x * moveSpeed;
-                window.deathStar.position.y -= targetDirection.y * moveSpeed;
-                window.deathStar.position.z -= targetDirection.z * moveSpeed;
-            } else {
-                // Approach very slowly
-                window.deathStar.position.x += targetDirection.x * (moveSpeed * 0.7);
-                window.deathStar.position.y += targetDirection.y * (moveSpeed * 0.7);
-                window.deathStar.position.z += targetDirection.z * (moveSpeed * 0.7);
-            }
-            
-            requestAnimationFrame(moveAndRotate);
-            return;
-        }
+   function moveAndRotate() {
+    // If still in waiting phase
+    if (gameTime > 15) { 
+        // Just rotate slowly and approach steadily
+        window.deathStar.rotation.y += 0.005;
         
-        // Regular movement after minimum play time has passed
-        // Move toward sun
-        window.deathStar.position.x += targetDirection.x * moveSpeed;
-        window.deathStar.position.y += targetDirection.y * moveSpeed;
-        window.deathStar.position.z += targetDirection.z * moveSpeed;
+        // Approach steadily
+        window.deathStar.position.x += targetDirection.x * (moveSpeed * 0.7);
+        window.deathStar.position.y += targetDirection.y * (moveSpeed * 0.7);
+        window.deathStar.position.z += targetDirection.z * (moveSpeed * 0.7);
         
-        // Calculate current forward direction of Death Star (negative Z axis)
-        const forward = new THREE.Vector3(0, 0, -1);
-        forward.applyQuaternion(window.deathStar.quaternion);
-        
-        // Determine if we need to continue rotating
-        const dot = forward.dot(targetDirection);
-        
-        // Always rotate, but check if we're close enough to fire
-        const rotationSpeed = 0.03;
-        
-        // Create a quaternion for rotation
-        const rotationAxis = new THREE.Vector3();
-        rotationAxis.crossVectors(forward, targetDirection).normalize();
-        
-        // Apply rotation
-        const quaternion = new THREE.Quaternion();
-        quaternion.setFromAxisAngle(rotationAxis, rotationSpeed);
-        window.deathStar.quaternion.premultiply(quaternion);
-        
-        // Check if we're at the desired distance from the sun and facing it
-        const distanceToSun = window.deathStar.position.distanceTo(sun.position);
-        
-        if (distanceToSun < 600 && distanceToSun > 200 && dot > 0.5) {
-            // We're at the right distance and facing the sun, start firing
-            pulseBeforeFiring();
-        } else if (distanceToSun <= 350) {
-            // Too close, back up a bit
-            window.deathStar.position.x -= targetDirection.x * moveSpeed;
-            window.deathStar.position.y -= targetDirection.y * moveSpeed;
-            window.deathStar.position.z -= targetDirection.z * moveSpeed;
-            requestAnimationFrame(moveAndRotate);
-        } else {
-            // Continue moving and rotating
-            requestAnimationFrame(moveAndRotate);
-        }
+        requestAnimationFrame(moveAndRotate);
+        return;
     }
     
-    moveAndRotate();
+    // When it's time to fire, move directly toward the sun
+    window.deathStar.position.x += targetDirection.x * moveSpeed;
+    window.deathStar.position.y += targetDirection.y * moveSpeed;
+    window.deathStar.position.z += targetDirection.z * moveSpeed;
+    
+    // Check distance to sun
+    const distanceToSun = window.deathStar.position.distanceTo(sun.position);
+    
+    // Check if we're at a good distance to fire
+    if (distanceToSun < 600 && distanceToSun > 200) {
+        // Look directly at the sun when in position to fire
+        // First, create a direction vector from Death Star to Sun
+        const dirToSun = new THREE.Vector3();
+        dirToSun.subVectors(sun.position, window.deathStar.position).normalize();
+        
+        // Create a rotation matrix to align the Death Star's negative z-axis with dirToSun
+        // (since the dish faces along negative z-axis)
+        const matrix = new THREE.Matrix4();
+        const up = new THREE.Vector3(0, 1, 0);
+        matrix.lookAt(new THREE.Vector3(0, 0, 0), dirToSun, up);
+        
+        // Apply the rotation
+        window.deathStar.quaternion.setFromRotationMatrix(matrix);
+        
+        // Rotate 180 degrees to aim the dish at the sun
+        window.deathStar.rotateY(Math.PI);
+        
+        // Now it's facing the sun correctly, start firing
+        pulseBeforeFiring();
+    } else if (distanceToSun <= 200) {
+        // Too close, back up a bit
+        window.deathStar.position.x -= targetDirection.x * moveSpeed;
+        window.deathStar.position.y -= targetDirection.y * moveSpeed;
+        window.deathStar.position.z -= targetDirection.z * moveSpeed;
+        requestAnimationFrame(moveAndRotate);
+    } else {
+        // Continue approaching
+        
+        // Still gradually face toward the sun while approaching
+        // Create a direction vector from Death Star to Sun
+        const dirToSun = new THREE.Vector3();
+        dirToSun.subVectors(sun.position, window.deathStar.position).normalize();
+        
+        // Get current facing direction (negative z-axis of Death Star)
+        const facing = new THREE.Vector3(0, 0, -1);
+        facing.applyQuaternion(window.deathStar.quaternion);
+        
+        // Calculate rotation to align with sun
+        const rotationAxis = new THREE.Vector3();
+        rotationAxis.crossVectors(facing, dirToSun).normalize();
+        
+        if (rotationAxis.length() > 0.001) {  // Avoid problems with parallel vectors
+            const angle = Math.acos(Math.min(1, Math.max(-1, facing.dot(dirToSun))));
+            const rotationStep = Math.min(0.03, angle);  // Limit rotation speed
+            
+            const q = new THREE.Quaternion();
+            q.setFromAxisAngle(rotationAxis, rotationStep);
+            window.deathStar.quaternion.premultiply(q);
+        }
+        
+        requestAnimationFrame(moveAndRotate);
+    }
 }
 
 // Function to pulse the laser before firing
@@ -1148,18 +1157,18 @@ function pulseBeforeFiring() {
     
     function pulse() {
         if (pulseCount < maxPulses) {
-            pulseCount++;
-            
-            // Make the laser point pulse
-            const pulseDuration = 400; // milliseconds
-            const pulseIntensity = 1.5;
-            
-            if (laser.material.emissiveIntensity !== undefined) {
-				laser.material.emissiveIntensity = pulseIntensity;
-			}
-            
-            setTimeout(() => {
-                laser.material.emissiveIntensity = 1.0;
+    pulseCount++;
+    
+    // Make the laser point pulse
+    const pulseDuration = 400; // milliseconds
+    const pulseIntensity = 1.5;
+    
+    // Pulse by changing scale instead of emissive property
+    const originalScale = laser.scale.x;
+    laser.scale.set(originalScale * 1.5, originalScale * 1.5, originalScale * 1.5);
+    
+    setTimeout(() => {
+        laser.scale.set(originalScale, originalScale, originalScale);
                 
                 setTimeout(() => {
                     pulse();
@@ -1213,10 +1222,9 @@ function fireLaser(deathStar, laserSource) {
     // Create the main laser beam pointed at the sun
     const laserGeometry = new THREE.CylinderGeometry(5, 5, distanceToSun, 16);
     const laserMaterial = new THREE.MeshBasicMaterial({
-        color: 0x66ff00,
-        transparent: true,
-        opacity: 0.7
-    });
+    color: 0x66ff00
+    // Remove emissive properties
+	});
     
     const laserBeam = new THREE.Mesh(laserGeometry, laserMaterial);
     
@@ -1325,7 +1333,7 @@ function startSunDestructionSequence(laserBeam, laserLight) {
     setTimeout(() => {
     try {
         // First play a deep rumble/charging sound
-        const chargeSound = new Audio('https://soundbible.com/grab.php?id=1900&type=mp3'); // Low rumble sound
+        const chargeSound = new Audio('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptitle=Darth+Vader+Breathing&filename=nj/NjgxODYzNjgxODYz_IASe0Jk8Xvg.mp3');
         chargeSound.volume = 0.5;
         chargeSound.play().catch(e => console.log("Couldn't play charge sound:", e));
         
@@ -1337,7 +1345,7 @@ function startSunDestructionSequence(laserBeam, laserLight) {
             
             // Add a secondary explosion sound for more depth
             setTimeout(() => {
-                const secondaryExplosion = new Audio('https://soundbible.com/grab.php?id=1234&type=mp3'); // Secondary blast
+                const secondaryExplosion = new Audio('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptitle=TIE+Fighter+Flyby&filename=mj/MjE1ODMzMjE1ODMz_sQC10mWxhRA.mp3');
                 secondaryExplosion.volume = 0.6;
                 secondaryExplosion.play().catch(e => console.log("Couldn't play secondary explosion:", e));
             }, 700);
@@ -1446,7 +1454,7 @@ function startSunDestructionSequence(laserBeam, laserLight) {
                 
 				// Add final dramatic sound as everything goes white
 				try {
-					const finalSound = new Audio('https://soundbible.com/grab.php?id=1792&type=mp3'); // Massive impact sound
+					const finalSound = new Audio('https://www.soundboard.com/handler/DownLoadTrack.ashx?cliptitle=Jedi+Knight+Death&filename=nj/NjY4ODMzNjY4ODMz_x5aGkVS4kpk.mp3');
 					finalSound.volume = 0.9;
 					finalSound.play().catch(e => console.log("Couldn't play final sound:", e));
 				} catch (error) {
